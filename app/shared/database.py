@@ -1,27 +1,23 @@
-from core.config import settings
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
-# Credenciais do banco de dados
-DB_USER = settings.DB_USER
-DB_PASSWORD = settings.DB_PASSWORD
-DB_HOST = 'localhost'  # settings.DB_HOST
-DB_PORT = settings.DB_PORT
-DB_NAME = settings.DB_NAME
+from app.core.settings import settings
 
-# Cria a URL do banco de dados
-# O formato é: dialect+driver://username:password@host:port/database
-DATABASE_URL = f'postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}'
+# URL do banco de dados
+DATABASE_URL = settings.DATABASE_URL
+
 # Cria o engine do SQLAlchemy
-engine = create_engine(DATABASE_URL)
+engine = create_async_engine(DATABASE_URL)
 # Cria a sessão local do SQLAlchemy
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+SessionLocal = async_sessionmaker(
+    autocommit=False, autoflush=False, bind=engine
+)
 
 
 # Dependency para obter a sessão do banco de dados
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+async def get_session():
+    async with AsyncSession(engine, expire_on_commit=False) as session:
+        yield session

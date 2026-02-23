@@ -1,24 +1,17 @@
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
+from http import HTTPStatus
 
-from .schemas import Message
+from fastapi import FastAPI
+
+from app.domains.auth import routers as auth_routers
+from app.domains.users import routers as users_routers
+from app.domains.users.schemas import Message
 
 app = FastAPI(title='EduPBL')
 
-
-@app.get('/', response_model=Message)
-def home():
-    return {'message': 'Olá, Mundo!'}
+app.include_router(auth_routers.router)
+app.include_router(users_routers.router)
 
 
-@app.get('/html', response_class=HTMLResponse)
-def html():
-    return """
-    <html>
-        <head>
-            <title>Olá, Mundo!</title>
-        </head>
-        <body>
-            <h1>Olá, Mundo!</h1>
-        </body>
-    </html>"""
+@app.get('/', status_code=HTTPStatus.OK, response_model=Message)
+def read_root():
+    return {'message': 'Olá Mundo!'}
