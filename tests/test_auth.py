@@ -1,12 +1,28 @@
+from datetime import datetime, timedelta
 from http import HTTPStatus
 
 from freezegun import freeze_time
+
+from app.core.settings import settings
+
+dia_hora = datetime(2026, 1, 1, 12, 0, 0)
+dia_hora_expiracao_token = dia_hora + timedelta(
+    minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES + 1
+)
+dia_hora_expiracao_refresh_token = dia_hora + timedelta(
+    minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES + 1
+)
 
 
 def test_get_token(client, user):
     response = client.post(
         '/auth/token',
-        data={'username': user.email, 'password': user.clean_password},
+        data={
+            'username': user.email,
+            'first_name': user.first_name,
+            'last_name': user.last_name,
+            'password': user.clean_password,
+        },
     )
     token = response.json()
 
@@ -15,8 +31,26 @@ def test_get_token(client, user):
     assert 'token_type' in token
 
 
+def test_auth_me(client, user, token):
+    response = client.get(
+        '/auth/me',
+        headers={'Authorization': f'Bearer {token}'},
+    )
+
+    data = response.json()
+
+    assert response.status_code == HTTPStatus.OK
+    assert data == {
+        'id': user.id,
+        'username': user.username,
+        'email': user.email,
+        'first_name': user.first_name,
+        'last_name': user.last_name,
+    }
+
+
 def test_token_expired_after_time(client, user):
-    with freeze_time('2026-01-01 12:00:00'):
+    with freeze_time(dia_hora):
         response = client.post(
             '/auth/token',
             data={'username': user.email, 'password': user.clean_password},
@@ -24,7 +58,7 @@ def test_token_expired_after_time(client, user):
         assert response.status_code == HTTPStatus.OK
         token = response.json()['access_token']
 
-    with freeze_time('2026-01-01 12:31:00'):
+    with freeze_time(dia_hora_expiracao_token):
         response = client.put(
             f'/users/{user.id}',
             headers={'Authorization': f'Bearer {token}'},
@@ -71,7 +105,7 @@ def test_refresh_token(client, user, token):
 
 
 def test_token_expired_dont_refresh(client, user):
-    with freeze_time('2026-01-01 12:00:00'):
+    with freeze_time(dia_hora):
         response = client.post(
             '/auth/token',
             data={'username': user.email, 'password': user.clean_password},
@@ -79,7 +113,7 @@ def test_token_expired_dont_refresh(client, user):
         assert response.status_code == HTTPStatus.OK
         token = response.json()['access_token']
 
-    with freeze_time('2026-01-01 12:31:00'):
+    with freeze_time(dia_hora_expiracao_refresh_token):
         response = client.post(
             '/auth/refresh_token',
             headers={'Authorization': f'Bearer {token}'},

@@ -10,7 +10,11 @@ from app.domains.users.models import User
 async def test_create_user(session, mock_db_time):
     with mock_db_time(model=User) as time:
         new_user = User(
-            username='alice', password='secret', email='teste@test'
+            username='alice',
+            first_name='alice',
+            last_name='liddell',
+            password='secret',
+            email='teste@test',
         )
         session.add(new_user)
         await session.commit()
@@ -21,6 +25,8 @@ async def test_create_user(session, mock_db_time):
         'id': 1,
         'username': 'alice',
         'password': 'secret',
+        'first_name': 'alice',
+        'last_name': 'liddell',
         'email': 'teste@test',
         'created_at': time,
         'updated_at': time,

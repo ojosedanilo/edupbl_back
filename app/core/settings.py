@@ -14,6 +14,7 @@ class Settings(BaseSettings):
 
     APP_NAME: str = 'EduPBL'
     DEBUG: bool = False
+    ENVIRONMENT: str = 'development'  # 'development' ou 'production'
 
     # Banco
     DB_USER: str
@@ -26,6 +27,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    REFRESH_TOKEN_EXPIRE_MINUTES: int = 43200  # 30 dias
 
     ARGON2_MEMORY_COST: int = 65536
     ARGON2_TIME_COST: int = 3

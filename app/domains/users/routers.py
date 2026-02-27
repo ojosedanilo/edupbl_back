@@ -88,6 +88,8 @@ async def update_user(
         current_user.username = user.username
         current_user.password = get_password_hash(user.password)
         current_user.email = user.email
+        current_user.first_name = user.first_name
+        current_user.last_name = user.last_name
         await session.commit()
         await session.refresh(current_user)
 

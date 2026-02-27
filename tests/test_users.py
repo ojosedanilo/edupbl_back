@@ -8,15 +8,19 @@ def test_create_user(client):
         '/users/',
         json={
             'username': 'alice',
+            'first_name': 'alice',
+            'last_name': 'liddell',
             'email': 'alice@example.com',
             'password': 'secret',
         },
     )
     assert response.status_code == HTTPStatus.CREATED
     assert response.json() == {
+        'id': 1,
         'username': 'alice',
         'email': 'alice@example.com',
-        'id': 1,
+        'first_name': 'alice',
+        'last_name': 'liddell',
     }
 
 
@@ -39,6 +43,8 @@ def test_update_user(client, user, token):
         json={
             'username': 'bob',
             'email': 'bob@example.com',
+            'first_name': 'bob',
+            'last_name': 'bobson',
             'password': 'mynewpassword',
         },
     )
@@ -46,6 +52,8 @@ def test_update_user(client, user, token):
     assert response.json() == {
         'username': 'bob',
         'email': 'bob@example.com',
+        'first_name': 'bob',
+        'last_name': 'bobson',
         'id': user.id,
     }
 
@@ -57,6 +65,8 @@ def test_update_integrity_error(client, user, token):
         json={
             'username': 'fausto',
             'email': 'fausto@example.com',
+            'first_name': 'fausto',
+            'last_name': 'faustino',
             'password': 'secret',
         },
     )
@@ -68,6 +78,8 @@ def test_update_integrity_error(client, user, token):
         json={
             'username': 'fausto',
             'email': 'bob@example.com',
+            'first_name': 'fausto',
+            'last_name': 'faustino',
             'password': 'mynewpassword',
         },
     )
@@ -95,6 +107,8 @@ def test_update_user_with_wrong_user(client, other_user, token):
         json={
             'username': 'bob',
             'email': 'bob@example.com',
+            'first_name': 'bob',
+            'last_name': 'bobson',
             'password': 'mynewpassword',
         },
     )
