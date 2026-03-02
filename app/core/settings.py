@@ -14,6 +14,7 @@ class Settings(BaseSettings):
 
     APP_NAME: str = 'EduPBL'
     DEBUG: bool = False
+    # !!! Mudar para 'production' na produção
     ENVIRONMENT: str = 'development'  # 'development' ou 'production'
 
     # Banco

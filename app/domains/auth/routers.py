@@ -19,6 +19,9 @@ from app.shared.security import (
     verify_password,
 )
 
+ESCOPO_ACCESS_TOKEN = '/auth/token'
+ESCOPO_REFRESH_TOKEN = '/auth/refresh_token'
+
 router = APIRouter(prefix='/auth', tags=['auth'])
 
 OAuth2Form = Annotated[OAuth2PasswordRequestForm, Depends()]
@@ -49,13 +52,15 @@ async def login_for_access_token(
     access_token = create_access_token(data={'sub': user.email})
     refresh_token = create_refresh_token(data={'sub': user.email})
 
-    # Armazena o refresh token no cookie
+    # Armazena o access token no cookie
     response.set_cookie(
         'refresh_token',
         refresh_token,
         httponly=True,
-        samesite='lax',
-        max_age=settings.REFRESH_TOKEN_EXPIRE_MINUTES * 60,
+        secure=settings.ENVIRONMENT == 'production',
+        samesite='strict',
+        path=ESCOPO_ACCESS_TOKEN,
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
 
     return {'access_token': access_token, 'token_type': 'bearer'}
@@ -110,7 +115,9 @@ async def refresh_access_token(
         'refresh_token',
         new_refresh_token,
         httponly=True,
-        samesite='lax',
+        secure=settings.ENVIRONMENT == 'production',
+        samesite='strict',
+        path=ESCOPO_REFRESH_TOKEN,
         max_age=settings.REFRESH_TOKEN_EXPIRE_MINUTES * 60,
     )
 
