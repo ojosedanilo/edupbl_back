@@ -9,12 +9,17 @@ class UserSchema(BaseModel):
     username: str
     email: EmailStr
     password: str
+    first_name: str
+    last_name: str
 
 
 class UserPublic(BaseModel):
     id: int
     username: str
     email: EmailStr
+    first_name: str
+    last_name: str
+
     model_config = ConfigDict(from_attributes=True)
 
 
