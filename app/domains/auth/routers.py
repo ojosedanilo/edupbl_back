@@ -12,6 +12,8 @@ from app.domains.auth.schemas import Token
 from app.domains.users.models import User
 from app.domains.users.schemas import UserPublic
 from app.shared.database import get_session
+from app.shared.rbac.dependencies import role_required
+from app.shared.rbac.roles import UserRole
 from app.shared.security import (
     create_access_token,
     create_refresh_token,
@@ -125,5 +127,14 @@ async def refresh_access_token(
 
 
 @router.get('/me', response_model=UserPublic)
-async def get_current_user(current_user: CurrentUser):
+async def get_me(current_user: CurrentUser):
     return current_user
+
+
+@router.get('/admin', response_model=UserPublic)
+async def get_admin(
+    coordinator: UserPublic = Depends(
+        role_required([UserRole.COORDINATOR, UserRole.ADMIN])
+    ),
+):
+    return coordinator

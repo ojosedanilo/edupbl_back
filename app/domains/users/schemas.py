@@ -1,5 +1,7 @@
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
+from app.shared.rbac.roles import UserRole
+
 
 class Message(BaseModel):
     message: str
@@ -11,6 +13,7 @@ class UserSchema(BaseModel):
     password: str
     first_name: str
     last_name: str
+    role: UserRole
 
 
 class UserPublic(BaseModel):
@@ -19,6 +22,7 @@ class UserPublic(BaseModel):
     email: EmailStr
     first_name: str
     last_name: str
+    role: UserRole
 
     model_config = ConfigDict(from_attributes=True)
 

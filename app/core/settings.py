@@ -12,26 +12,28 @@ class Settings(BaseSettings):
         env_file=ENV_PATH, case_sensitive=True, env_file_encoding='utf-8'
     )
 
+    # ----- App -----
     APP_NAME: str = 'EduPBL'
     DEBUG: bool = False
     # !!! Mudar para 'production' na produção
     ENVIRONMENT: str = 'development'  # 'development' ou 'production'
+    API_URL: str
 
-    # Banco
+    # ----- Autenticação -----
+    SECRET_KEY: str
+    ALGORITHM: str
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    REFRESH_TOKEN_EXPIRE_MINUTES: int = 43200  # 30 dias
+    ARGON2_MEMORY_COST: int = 65536
+    ARGON2_TIME_COST: int = 3
+
+    # ----- Banco -----
     DB_USER: str
     DB_PASSWORD: str
     DB_HOST: str
     DB_PORT: int
     DB_NAME: str
     DATABASE_URL: str
-
-    SECRET_KEY: str
-    ALGORITHM: str
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
-    REFRESH_TOKEN_EXPIRE_MINUTES: int = 43200  # 30 dias
-
-    ARGON2_MEMORY_COST: int = 65536
-    ARGON2_TIME_COST: int = 3
 
 
 settings = Settings()
