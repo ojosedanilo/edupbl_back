@@ -13,7 +13,9 @@ class UserSchema(BaseModel):
     password: str
     first_name: str
     last_name: str
-    role: UserRole
+    role: UserRole = UserRole.STUDENT
+    is_tutor: bool
+    is_active: bool
 
 
 class UserPublic(BaseModel):
@@ -23,6 +25,8 @@ class UserPublic(BaseModel):
     first_name: str
     last_name: str
     role: UserRole
+    is_tutor: bool
+    is_active: bool
 
     model_config = ConfigDict(from_attributes=True)
 

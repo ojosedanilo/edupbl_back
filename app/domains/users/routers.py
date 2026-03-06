@@ -53,6 +53,7 @@ async def create_user(user: UserSchema, session: Session):
         first_name=user.first_name,
         last_name=user.last_name,
         password=hashed_password,
+        role=user.role,
     )
 
     session.add(db_user)
