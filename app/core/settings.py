@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Acha a raiz do projeto automaticamente
 BASE_DIR = Path(__file__).resolve().parents[3]
-ENV_PATH = BASE_DIR / 'example.env'  # !!! Mudar para .env na produção
+ENV_PATH = BASE_DIR / '.env'
 
 
 class Settings(BaseSettings):

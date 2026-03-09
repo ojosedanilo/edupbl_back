@@ -14,8 +14,20 @@ class UserSchema(BaseModel):
     first_name: str
     last_name: str
     role: UserRole = UserRole.STUDENT
-    is_tutor: bool
-    is_active: bool
+    is_tutor: bool = False
+    is_active: bool = True
+
+
+class UserUpdate(BaseModel):
+    """Schema para atualização de usuário - todos campos opcionais"""
+
+    username: str | None = None
+    email: EmailStr | None = None
+    password: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    is_tutor: bool | None = None
+    is_active: bool | None = None
 
 
 class UserPublic(BaseModel):

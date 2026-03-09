@@ -2,8 +2,7 @@ from http import HTTPStatus
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domains.users.models import User
@@ -13,6 +12,7 @@ from app.domains.users.schemas import (
     UserList,
     UserPublic,
     UserSchema,
+    UserUpdate,
 )
 from app.shared.database import get_session
 from app.shared.security import (
@@ -54,6 +54,8 @@ async def create_user(user: UserSchema, session: Session):
         last_name=user.last_name,
         password=hashed_password,
         role=user.role,
+        is_tutor=user.is_tutor,
+        is_active=user.is_active,
     )
 
     session.add(db_user)
@@ -79,7 +81,7 @@ async def read_users(
 @router.put('/{user_id}', response_model=UserPublic)
 async def update_user(
     user_id: int,
-    user: UserSchema,
+    user: UserUpdate,
     session: Session,
     current_user: CurrentUser,
 ):
@@ -87,22 +89,39 @@ async def update_user(
         raise HTTPException(
             status_code=HTTPStatus.FORBIDDEN, detail='Not enough permissions'
         )
-    try:
-        current_user.username = user.username
-        current_user.password = get_password_hash(user.password)
-        current_user.email = user.email
-        current_user.first_name = user.first_name
-        current_user.last_name = user.last_name
-        await session.commit()
-        await session.refresh(current_user)
 
-        return current_user
+    # Validar conflitos de username/email antes de atualizar
+    if user.username is not None or user.email is not None:
+        conditions = []
+        if user.username is not None:
+            conditions.append(User.username == user.username)
+        if user.email is not None:
+            conditions.append(User.email == user.email)
 
-    except IntegrityError:
-        raise HTTPException(
-            status_code=HTTPStatus.CONFLICT,
-            detail='Username or Email already exists',
-        )
+        # Busca se existe outro usuário com username OU email que queremos usar
+        db_user = await session.scalar(select(User).where(or_(*conditions)))
+
+        # Se encontrou alguém E não é o próprio usuário atual
+        if db_user and db_user.id != current_user.id:
+            raise HTTPException(
+                status_code=HTTPStatus.CONFLICT,
+                detail='Username or Email already exists',
+            )
+
+    # Atualizar apenas campos que foram enviados
+    update_data = user.model_dump(exclude_unset=True)
+
+    for field, value in update_data.items():
+        if field == 'password':
+            # Hash da senha antes de salvar
+            setattr(current_user, field, get_password_hash(value))
+        else:
+            setattr(current_user, field, value)
+
+    await session.commit()
+    await session.refresh(current_user)
+
+    return current_user
 
 
 @router.delete('/{user_id}', response_model=Message)

@@ -46,6 +46,9 @@ def test_auth_me(client, user, token):
         'email': user.email,
         'first_name': user.first_name,
         'last_name': user.last_name,
+        'role': user.role,
+        'is_active': user.is_active,
+        'is_tutor': user.is_tutor,
     }
 
 
@@ -90,10 +93,12 @@ def test_token_wrong_password(client, user):
     assert response.json() == {'detail': 'Incorrect email or password'}
 
 
-def test_refresh_token(client, user, token):
+# def test_refresh_token(client, user, token):
+def test_refresh_token(client, user, refresh_token):
     response = client.post(
         '/auth/refresh_token',
-        headers={'Authorization': f'Bearer {token}'},
+        # headers={'Authorization': f'Bearer {token}'},
+        cookies={'refresh_token': refresh_token},
     )
 
     data = response.json()

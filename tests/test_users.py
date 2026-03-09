@@ -1,6 +1,7 @@
 from http import HTTPStatus
 
 from app.domains.users.schemas import UserPublic
+from app.shared.rbac.roles import UserRole
 
 
 def test_create_user(client):
@@ -12,6 +13,9 @@ def test_create_user(client):
             'last_name': 'liddell',
             'email': 'alice@example.com',
             'password': 'secret',
+            'role': UserRole.TEACHER,
+            'is_active': True,
+            'is_tutor': True,
         },
     )
     assert response.status_code == HTTPStatus.CREATED
@@ -21,6 +25,9 @@ def test_create_user(client):
         'email': 'alice@example.com',
         'first_name': 'alice',
         'last_name': 'liddell',
+        'role': UserRole.TEACHER,
+        'is_active': True,
+        'is_tutor': True,
     }
 
 
@@ -46,6 +53,8 @@ def test_update_user(client, user, token):
             'first_name': 'bob',
             'last_name': 'bobson',
             'password': 'mynewpassword',
+            'is_active': True,
+            'is_tutor': False,
         },
     )
     assert response.status_code == HTTPStatus.OK
@@ -55,6 +64,9 @@ def test_update_user(client, user, token):
         'first_name': 'bob',
         'last_name': 'bobson',
         'id': user.id,
+        'role': user.role,  # Usa o role que o user já tinha
+        'is_active': True,
+        'is_tutor': False,
     }
 
 
@@ -81,8 +93,13 @@ def test_update_integrity_error(client, user, token):
             'first_name': 'fausto',
             'last_name': 'faustino',
             'password': 'mynewpassword',
+            'is_active': True,
+            'is_tutor': False,
         },
     )
+    print(response_update.status_code)
+    print(response_update.json())
+    # breakpoint()
 
     assert response_update.status_code == HTTPStatus.CONFLICT
     assert response_update.json() == {

@@ -1,33 +1,26 @@
 from http import HTTPStatus
+from typing import Set
 
 from fastapi import Depends, HTTPException
 
-from typing import List
-
 from app.domains.users.models import User
+from app.shared.rbac import helpers
 from app.shared.rbac.permissions import SystemPermissions
 from app.shared.rbac.roles import UserRole
 from app.shared.security import get_current_user
 
 
 class PermissionChecker:
-    def __init__(self, required_permissions: List[SystemPermissions]):
+    def __init__(self, required_permissions: Set[SystemPermissions]):
         self.required_permissions = required_permissions
 
-    def __call__(
-        self,
-        user_permissions: List[str] = Depends(
-            get_current_user_permissions
-        ),  # !!! Implementar !!!
-    ):
-        # Check if the user has any of the required permissions
-        for permission in self.required_permissions:
-            if permission.value in user_permissions:
-                return True
+    def __call__(self, user: User = Depends(get_current_user)):
+        if helpers.user_has_all_permissions(user, self.required_permissions):
+            return user
 
-        # If no permission is found, raise a 403 Forbidden error
         raise HTTPException(
-            status_code=HTTPStatus.FORBIDDEN, detail='Insufficient permissions'
+            status_code=HTTPStatus.FORBIDDEN,
+            detail='Insufficient permissions',
         )
 
 
@@ -41,3 +34,15 @@ def role_required(required_roles: list[UserRole]):
         return user
 
     return wrapper
+
+
+def require_permission(user: User, permission: SystemPermissions):
+    return helpers.user_has_permission(user, permission)
+
+
+def require_any_permission(user: User, permission: SystemPermissions):
+    return helpers.user_has_any_permission(user, permission)
+
+
+def require_all_permissions(user: User, permissions: Set[SystemPermissions]):
+    return helpers.user_has_all_permissions(user, permissions)

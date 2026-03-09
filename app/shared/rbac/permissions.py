@@ -1,4 +1,5 @@
 from enum import Enum
+
 from app.shared.rbac.roles import UserRole
 
 # Naming convention: VERBO_RECURSO
@@ -118,17 +119,19 @@ ROLE_PERMISSIONS = {
     # Coordenador
     UserRole.COORDINATOR: {*SystemPermissions} - COORDINATOR_EXCEPTION_ROLES,
     # Porteiro
+    UserRole.PORTER: {
+        SystemPermissions.DELAYS_CREATE,
+        SystemPermissions.DELAYS_VIEW_ALL,
+    },
     # Admin do sistema
     UserRole.ADMIN: {*SystemPermissions},
 }
 
 # Permissões especiais para o Professor Diretor de Turma
-TUTOR_EXTRA_PERMISSIONS = (
-    {
-        SystemPermissions.CERTIFICATES_VALIDATE,
-        SystemPermissions.REPORTS_VIEW_OWN_CLASS,
-    },
-)
+TUTOR_EXTRA_PERMISSIONS = {
+    SystemPermissions.CERTIFICATES_VALIDATE,
+    SystemPermissions.REPORTS_VIEW_OWN_CLASS,
+}
 
 # Adiciona permissões para todos os usuários
 for user_role, permissions in ROLE_PERMISSIONS.items():

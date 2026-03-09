@@ -12,7 +12,12 @@ from sqlalchemy.pool import StaticPool
 from app.app import app
 from app.domains.users.models import User, table_registry
 from app.shared.database import get_session
-from app.shared.security import get_password_hash
+from app.shared.rbac.roles import UserRole
+from app.shared.security import (
+    create_access_token,
+    create_refresh_token,
+    get_password_hash,
+)
 
 
 @pytest.fixture
@@ -93,11 +98,19 @@ async def other_user(session):
 
 @pytest.fixture
 def token(client, user):
+    """
     response = client.post(
         '/auth/token',
         data={'username': user.email, 'password': user.clean_password},
     )
     return response.json()['access_token']
+    """
+    return create_access_token(data={'sub': user.email})
+
+
+@pytest.fixture
+def refresh_token(user):
+    return create_refresh_token(data={'sub': user.email})
 
 
 class UserFactory(factory.Factory):
@@ -109,3 +122,6 @@ class UserFactory(factory.Factory):
     last_name = factory.LazyAttribute(lambda obj: f'{obj.username}_last')
     email = factory.LazyAttribute(lambda obj: f'{obj.username}@test.com')
     password = factory.LazyAttribute(lambda obj: f'{obj.username}@example.com')
+    role = UserRole.STUDENT
+    is_tutor = False
+    is_active = True
