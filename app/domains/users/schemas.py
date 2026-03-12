@@ -1,5 +1,6 @@
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
+from app.shared.rbac.permissions import SystemPermissions
 from app.shared.rbac.roles import UserRole
 
 
@@ -41,6 +42,10 @@ class UserPublic(BaseModel):
     is_active: bool
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class UserWithPermissions(UserPublic):
+    permissions: set[SystemPermissions]
 
 
 class UserList(BaseModel):

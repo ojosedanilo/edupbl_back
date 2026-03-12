@@ -1,5 +1,4 @@
 from http import HTTPStatus
-from typing import Set
 
 from fastapi import Depends, HTTPException
 
@@ -11,7 +10,7 @@ from app.shared.security import get_current_user
 
 
 class PermissionChecker:
-    def __init__(self, required_permissions: Set[SystemPermissions]):
+    def __init__(self, required_permissions: set[SystemPermissions]):
         self.required_permissions = required_permissions
 
     def __call__(self, user: User = Depends(get_current_user)):
@@ -44,5 +43,5 @@ def require_any_permission(user: User, permission: SystemPermissions):
     return helpers.user_has_any_permission(user, permission)
 
 
-def require_all_permissions(user: User, permissions: Set[SystemPermissions]):
+def require_all_permissions(user: User, permissions: set[SystemPermissions]):
     return helpers.user_has_all_permissions(user, permissions)

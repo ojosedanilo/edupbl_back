@@ -30,7 +30,13 @@ class User:
 
     # Role e permissões
     role: Mapped[UserRole] = mapped_column(
-        SQLEnum(UserRole), default=UserRole.STUDENT, nullable=False
+        SQLEnum(
+            UserRole,
+            name='userrole',
+            values_callable=lambda x: [e.value for e in x],
+        ),
+        default=UserRole.STUDENT,
+        nullable=False,
     )
 
     # Flags especiais

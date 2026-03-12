@@ -1,5 +1,3 @@
-from typing import Set
-
 from app.domains.users.models import User
 from app.shared.rbac.permissions import (
     ROLE_PERMISSIONS,
@@ -8,7 +6,7 @@ from app.shared.rbac.permissions import (
 )
 
 
-def get_user_permissions(user: User) -> Set[SystemPermissions]:
+def get_user_permissions(user: User) -> set[SystemPermissions]:
     """Obtém as permissões do usuário"""
     # Obtém as permissões da role do usuário, ou retorna um set vazio
     permissions = ROLE_PERMISSIONS.get(user.role, set()).copy()
@@ -26,15 +24,13 @@ def user_has_permission(user: User, permission: SystemPermissions) -> bool:
     return permission in permissions
 
 
-def user_has_any_permission(
-    user: User, permissions: Set[SystemPermissions]
-) -> bool:
+def user_has_any_permission(user: User, permission: SystemPermissions) -> bool:
     """Verifica se usuário tem QUALQUER uma das permissões"""
-    return not permissions.isdisjoint(get_user_permissions(user))
+    return not get_user_permissions(user).isdisjoint(permission)
 
 
 def user_has_all_permissions(
-    user: User, permissions: Set[SystemPermissions]
+    user: User, permissions: set[SystemPermissions]
 ) -> bool:
     """Verifica se usuário tem TODAS as permissões"""
     return permissions.issubset(get_user_permissions(user))

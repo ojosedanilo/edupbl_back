@@ -52,6 +52,27 @@ def test_auth_me(client, user, token):
     }
 
 
+def test_auth_me_permissions(client, user, token):
+    response = client.get(
+        '/auth/me/permissions',
+        headers={'Authorization': f'Bearer {token}'},
+    )
+
+    data = response.json()
+
+    assert response.status_code == HTTPStatus.OK
+    assert data == {
+        'id': user.id,
+        'username': user.username,
+        'email': user.email,
+        'first_name': user.first_name,
+        'last_name': user.last_name,
+        'role': user.role,
+        'is_active': user.is_active,
+        'is_tutor': user.is_tutor,
+    }
+
+
 def test_token_expired_after_time(client, user):
     with freeze_time(dia_hora):
         response = client.post(

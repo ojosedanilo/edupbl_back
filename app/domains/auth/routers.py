@@ -10,9 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.settings import settings
 from app.domains.auth.schemas import Token
 from app.domains.users.models import User
-from app.domains.users.schemas import UserPublic
+from app.domains.users.schemas import UserPublic, UserWithPermissions
 from app.shared.database import get_session
 from app.shared.rbac.dependencies import role_required
+from app.shared.rbac.helpers import get_user_permissions
 from app.shared.rbac.roles import UserRole
 from app.shared.security import (
     create_access_token,
@@ -129,6 +130,14 @@ async def refresh_access_token(
 @router.get('/me', response_model=UserPublic)
 async def get_me(current_user: CurrentUser):
     return current_user
+
+
+@router.get('/me/permissions', response_model=UserWithPermissions)
+async def get_me_permissions(current_user: CurrentUser):
+    permissions = get_user_permissions(current_user)
+    return UserWithPermissions(
+        **current_user.__dict__, permissions=permissions
+    )
 
 
 @router.get('/admin', response_model=UserPublic)
