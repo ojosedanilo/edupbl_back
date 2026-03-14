@@ -4,20 +4,15 @@ Testes para o sistema RBAC (Roles e Permissions)
 
 from http import HTTPStatus
 
-import pytest
 import pytest_asyncio
 
-from app.domains.users.models import User
 from app.shared.rbac.helpers import get_user_permissions
 from app.shared.rbac.permissions import (
-    ROLE_PERMISSIONS,
-    TUTOR_EXTRA_PERMISSIONS,
     SystemPermissions,
 )
 from app.shared.rbac.roles import UserRole
 from app.shared.security import get_password_hash
 from tests.conftest import UserFactory
-
 
 # ============================================================================
 # FIXTURES - Usuários com diferentes roles

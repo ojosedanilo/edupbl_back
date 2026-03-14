@@ -4,6 +4,7 @@ from http import HTTPStatus
 from freezegun import freeze_time
 
 from app.core.settings import settings
+from app.shared.rbac.helpers import get_user_permissions
 
 dia_hora = datetime(2026, 1, 1, 12, 0, 0)
 dia_hora_expiracao_token = dia_hora + timedelta(
@@ -61,16 +62,21 @@ def test_auth_me_permissions(client, user, token):
     data = response.json()
 
     assert response.status_code == HTTPStatus.OK
-    assert data == {
-        'id': user.id,
-        'username': user.username,
-        'email': user.email,
-        'first_name': user.first_name,
-        'last_name': user.last_name,
-        'role': user.role,
-        'is_active': user.is_active,
-        'is_tutor': user.is_tutor,
-    }
+
+    # Verifica os campos de usuario
+    assert data['id'] == user.id
+    assert data['username'] == user.username
+    assert data['email'] == user.email
+    assert data['first_name'] == user.first_name
+    assert data['last_name'] == user.last_name
+    assert data['role'] == user.role
+    assert data['is_active'] == user.is_active
+    assert data['is_tutor'] == user.is_tutor
+
+    # Verifica que permissions esta presente e bate com o esperado
+    assert 'permissions' in data
+    expected_permissions = {p.value for p in get_user_permissions(user)}
+    assert set(data['permissions']) == expected_permissions
 
 
 def test_token_expired_after_time(client, user):

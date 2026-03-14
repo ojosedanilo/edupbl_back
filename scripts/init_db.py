@@ -41,9 +41,7 @@ async def create_database_if_not_exists():
         async with engine.connect() as conn:
             # Verifica se banco existe
             result = await conn.execute(
-                text(
-                    "SELECT 1 FROM pg_database WHERE datname = :db_name"
-                ),
+                text('SELECT 1 FROM pg_database WHERE datname = :db_name'),
                 {'db_name': db_name},
             )
             exists = result.scalar()
@@ -73,9 +71,7 @@ async def create_enum_if_not_exists():
         async with engine.connect() as conn:
             # Verifica se enum existe
             result = await conn.execute(
-                text(
-                    "SELECT 1 FROM pg_type WHERE typname = 'userrole'"
-                )
+                text("SELECT 1 FROM pg_type WHERE typname = 'userrole'")
             )
             exists = result.scalar()
 
@@ -83,8 +79,9 @@ async def create_enum_if_not_exists():
                 print('⚠️  Tipo ENUM userrole não existe. Criando...')
                 await conn.execute(
                     text(
-                        "CREATE TYPE userrole AS ENUM "
-                        "('student', 'guardian', 'teacher', 'coordinator', 'porter', 'admin')"
+                        'CREATE TYPE userrole AS ENUM '
+                        "('student', 'guardian', 'teacher',"
+                        "'coordinator', 'porter', 'admin')"
                     )
                 )
                 await conn.commit()

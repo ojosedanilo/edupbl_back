@@ -55,15 +55,16 @@ async def login_for_access_token(
     access_token = create_access_token(data={'sub': user.email})
     refresh_token = create_refresh_token(data={'sub': user.email})
 
-    # Armazena o access token no cookie
+    # Armazena o refresh token no cookie com
+    # path restrito ao endpoint de refresh
     response.set_cookie(
         'refresh_token',
         refresh_token,
         httponly=True,
         secure=settings.ENVIRONMENT == 'production',
         samesite='strict',
-        path=ESCOPO_ACCESS_TOKEN,
-        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        path=ESCOPO_REFRESH_TOKEN,
+        max_age=settings.REFRESH_TOKEN_EXPIRE_MINUTES * 60,
     )
 
     return {'access_token': access_token, 'token_type': 'bearer'}

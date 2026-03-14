@@ -1,3 +1,4 @@
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domains.users.models import User, UserRole
@@ -5,7 +6,8 @@ from app.shared.security import get_password_hash
 
 
 async def seed_test_users(session: AsyncSession):
-    """Cria usuários de teste para cada role"""
+    """Cria usuários de teste para cada role
+    (idempotente — pula se já existir)"""
     # !!! Para testes !!!
 
     users = [
@@ -46,7 +48,7 @@ async def seed_test_users(session: AsyncSession):
             first_name='Maria',
             last_name='Professor DT',
             role=UserRole.TEACHER,
-            is_tutor=True,  # ← Professor DT
+            is_tutor=True,  # <- Professor DT
             is_active=True,
         ),
         User(
@@ -73,16 +75,26 @@ async def seed_test_users(session: AsyncSession):
             username='responsavel',
             email='responsavel@edupbl.com',
             password=get_password_hash('responsavel'),
-            first_name='João',
-            last_name='Responsável',
+            first_name='Joao',
+            last_name='Responsavel',
             role=UserRole.GUARDIAN,
             is_tutor=False,
             is_active=True,
         ),
     ]
 
+    criados = 0
     for user in users:
-        session.add(user)
+        # Verifica se ja existe pelo email para ser idempotente
+        existing = await session.scalar(
+            select(User).where(User.email == user.email)
+        )
+        if not existing:
+            session.add(user)
+            criados += 1
 
-    await session.commit()
-    print(f'✅ {len(users)} usuários criados com sucesso!')
+    if criados:
+        await session.commit()
+        print(f'OK {criados} usuarios criados com sucesso!')
+    else:
+        print('INFO Todos os usuarios de teste ja existem. Nenhum criado.')
