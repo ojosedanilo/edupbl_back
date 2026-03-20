@@ -9,6 +9,7 @@ from app.domains.users.models import User
 from app.domains.users.schemas import (
     FilterPage,
     Message,
+    PasswordChange,
     UserList,
     UserPublic,
     UserSchema,
@@ -18,6 +19,7 @@ from app.shared.database import get_session
 from app.shared.security import (
     get_current_user,
     get_password_hash,
+    verify_password,
 )
 
 router = APIRouter(prefix='/users', tags=['users'])
@@ -56,6 +58,7 @@ async def create_user(user: UserSchema, session: Session):
         role=user.role,
         is_tutor=user.is_tutor,
         is_active=user.is_active,
+        must_change_password=user.must_change_password,
     )
 
     session.add(db_user)
@@ -122,6 +125,27 @@ async def update_user(
     await session.refresh(current_user)
 
     return current_user
+
+
+@router.patch('/me/password', response_model=Message)
+async def change_my_password(
+    data: PasswordChange,
+    session: Session,
+    current_user: CurrentUser,
+):
+    """Troca a senha do usuário logado e limpa o flag must_change_password."""
+    if not verify_password(data.current_password, current_user.password):
+        raise HTTPException(
+            status_code=HTTPStatus.UNAUTHORIZED,
+            detail='Current password is incorrect',
+        )
+
+    current_user.password = get_password_hash(data.new_password)
+    current_user.must_change_password = False
+
+    await session.commit()
+
+    return {'message': 'Password updated successfully'}
 
 
 @router.delete('/{user_id}', response_model=Message)

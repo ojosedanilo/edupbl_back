@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, String, func
+from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Integer, String, func
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_as_dataclass, mapped_column, registry
 
@@ -10,8 +10,29 @@ table_registry = registry()
 
 
 @mapped_as_dataclass(table_registry)
+class Classroom:
+    """Representa uma turma/sala da escola."""
+
+    __tablename__ = 'classrooms'
+
+    id: Mapped[int] = mapped_column(
+        init=False, primary_key=True, nullable=False
+    )
+
+    # Ex: "1º ano A", "2º ano B", "3º ano C"
+    name: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+
+
+@mapped_as_dataclass(table_registry)
 class User:
     __tablename__ = 'users'
+    __table_args__ = (
+        # Garante no banco que username só tem [a-z0-9_.] — mesmo fora da API
+        CheckConstraint(
+            r"username ~ '^[a-z0-9_.]+$'",
+            name='ck_users_username_chars',
+        ),
+    )
 
     id: Mapped[int] = mapped_column(
         init=False, primary_key=True, nullable=False
@@ -46,6 +67,18 @@ class User:
     )
     is_active: Mapped[bool] = mapped_column(
         Boolean, default=True, nullable=False
+    )
+    # Força troca de senha no primeiro login (True para usuários importados via CSV)
+    must_change_password: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+
+    # Sala (obrigatório para alunos e professores DT, NULL para os demais)
+    classroom_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey('classrooms.id', ondelete='SET NULL'),
+        default=None,
+        nullable=True,
     )
 
     # Metadados

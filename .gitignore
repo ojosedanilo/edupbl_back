@@ -1,0 +1,15 @@
+# Cache e Arquivos Não Essenciais
+/edupbl_backend.egg-info
+*.pyc
+.coverage
+
+# Dados reais - NUNCA commitar
+data/*.csv
+data/*.xlsx
+data/*.json
+*.env
+
+# Mantém a dos dados mas não o conteúdo
+!data/.gitkeep
+!data/*.example
+!data/README.md

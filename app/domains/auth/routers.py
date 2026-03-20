@@ -67,7 +67,11 @@ async def login_for_access_token(
         max_age=settings.REFRESH_TOKEN_EXPIRE_MINUTES * 60,
     )
 
-    return {'access_token': access_token, 'token_type': 'bearer'}
+    return {
+        'access_token': access_token,
+        'token_type': 'bearer',
+        'must_change_password': user.must_change_password,
+    }
 
 
 @router.post('/logout')
@@ -125,7 +129,11 @@ async def refresh_access_token(
         max_age=settings.REFRESH_TOKEN_EXPIRE_MINUTES * 60,
     )
 
-    return {'access_token': new_access_token, 'token_type': 'bearer'}
+    return {
+        'access_token': new_access_token,
+        'token_type': 'bearer',
+        'must_change_password': user.must_change_password,
+    }
 
 
 @router.get('/me', response_model=UserPublic)
