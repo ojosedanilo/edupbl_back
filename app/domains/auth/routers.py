@@ -11,7 +11,7 @@ from app.core.settings import settings
 from app.domains.auth.schemas import Token
 from app.domains.users.models import User
 from app.domains.users.schemas import UserPublic, UserWithPermissions
-from app.shared.database import get_session
+from app.shared.db.database import get_session
 from app.shared.rbac.dependencies import role_required
 from app.shared.rbac.helpers import get_user_permissions
 from app.shared.rbac.roles import UserRole
@@ -144,9 +144,8 @@ async def get_me(current_user: CurrentUser):
 @router.get('/me/permissions', response_model=UserWithPermissions)
 async def get_me_permissions(current_user: CurrentUser):
     permissions = get_user_permissions(current_user)
-    return UserWithPermissions(
-        **current_user.__dict__, permissions=permissions
-    )
+    base = UserPublic.model_validate(current_user)
+    return UserWithPermissions(**base.model_dump(), permissions=permissions)
 
 
 @router.get('/admin', response_model=UserPublic)

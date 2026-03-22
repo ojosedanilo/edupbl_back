@@ -6,8 +6,9 @@ Modos de uso:
 
 1. Usuários de teste (desenvolvimento):
    uv run python scripts/seed_db.py
-   
-   Cria 7 usuários fake (must_change_password=False — sem obrigação de trocar senha):
+
+   Cria 7 usuários fake
+   (must_change_password=False — sem obrigação de trocar senha):
    - admin@edupbl.com (senha: admin)
    - coordenador@edupbl.com (senha: coordenador)
    - professor@edupbl.com (senha: professor)
@@ -18,7 +19,7 @@ Modos de uso:
 
 2. Usuários reais (importar CSVs):
    uv run python scripts/seed_db.py --real
-   
+
    Importa de backend/data/:
    - admins.csv
    - coordenadores.csv
@@ -36,14 +37,16 @@ import argparse
 import asyncio
 import sys
 
-from app.shared.database import SessionLocal
-from app.shared.seed import seed_real_users, seed_test_users
+from app.shared.db.database import SessionLocal
+from app.shared.db.seed import seed_real_users, seed_test_users
 
 
 async def main():
     """Função principal"""
     # Parse de argumentos
-    parser = argparse.ArgumentParser(description='Popula banco de dados com usuários')
+    parser = argparse.ArgumentParser(
+        description='Popula banco de dados com usuários'
+    )
     parser.add_argument(
         '--real',
         action='store_true',
@@ -95,7 +98,8 @@ async def main():
         # Instruções pós-seed
         if args.real or args.all:
             print(
-                '\n⚠️  IMPORTANTE: Usuários reais foram criados com must_change_password=True!'
+                '\n⚠️  IMPORTANTE: Usuários reais foram criados com'
+                ' must_change_password=True!'
             )
             print('   Eles serão forçados a trocar a senha no primeiro login.')
             print('   Endpoint de troca: PATCH /users/me/password')

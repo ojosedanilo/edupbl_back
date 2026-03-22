@@ -21,7 +21,7 @@ Crie o arquivo `models.py` dentro do novo domínio. O model representa a tabela 
 - **`description`** — descrição detalhada
 - **`created_at` e `updated_at`** — gerados automaticamente pelo banco, seguindo o padrão dos outros models
 
-Use o mesmo `table_registry` já existente em `users/models.py` para que o Alembic enxergue todas as tabelas de um lugar só.
+Use o mesmo `mapper_registry` já existente em `users/models.py` para que o Alembic enxergue todas as tabelas de um lugar só.
 
 ---
 

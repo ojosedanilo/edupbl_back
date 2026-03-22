@@ -97,7 +97,7 @@ app/domains/delays/
 - Tabela `delays` com todos os campos listados acima
 - FKs para `users` (student, registered_by, approved_by)
 - Enum `DelayStatus` (PENDING, APPROVED, REJECTED)
-- Usar `table_registry` compartilhado
+- Usar `mapper_registry` compartilhado
 
 #### **Passo 1.3: Criar Schemas (`schemas.py`)**
 

@@ -1,15 +1,46 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Integer, String, func
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Column,
+    ForeignKey,
+    Integer,
+    String,
+    Table,
+    func,
+)
 from sqlalchemy import Enum as SQLEnum
-from sqlalchemy.orm import Mapped, mapped_as_dataclass, mapped_column, registry
+from sqlalchemy.orm import (
+    Mapped,
+    mapped_as_dataclass,
+    mapped_column,
+    relationship,
+)
 
+from app.shared.db.registry import mapper_registry
 from app.shared.rbac.roles import UserRole
 
-table_registry = registry()
+# Tabela de associação responsável ↔ aluno (many-to-many)
+guardian_student = Table(
+    'guardian_student',
+    mapper_registry.metadata,
+    Column(
+        'guardian_id',
+        Integer,
+        ForeignKey('users.id', ondelete='CASCADE'),
+        primary_key=True,
+    ),
+    Column(
+        'student_id',
+        Integer,
+        ForeignKey('users.id', ondelete='CASCADE'),
+        primary_key=True,
+    ),
+)
 
 
-@mapped_as_dataclass(table_registry)
+@mapped_as_dataclass(mapper_registry)
 class Classroom:
     """Representa uma turma/sala da escola."""
 
@@ -23,14 +54,18 @@ class Classroom:
     name: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
 
 
-@mapped_as_dataclass(table_registry)
+@mapped_as_dataclass(mapper_registry)
 class User:
     __tablename__ = 'users'
     __table_args__ = (
-        # Garante no banco que username só tem [a-z0-9_.] — mesmo fora da API
+        # Constraint portável: validada na camada Python (schema Pydantic).
+        # A CheckConstraint com regex usa sintaxe diferente em SQLite (~) e
+        # PostgreSQL (REGEXP / GLOB), por isso é omitida aqui para evitar
+        # erros nos testes (SQLite) e na produção (PostgreSQL).
+        # A validação real é feita pelo field_validator em UserSchema.
         CheckConstraint(
-            r"username ~ '^[a-z0-9_.]+$'",
-            name='ck_users_username_chars',
+            'length(username) > 0',
+            name='ck_users_username_nonempty',
         ),
     )
 
@@ -68,7 +103,8 @@ class User:
     is_active: Mapped[bool] = mapped_column(
         Boolean, default=True, nullable=False
     )
-    # Força troca de senha no primeiro login (True para usuários importados via CSV)
+    # Força troca de senha no primeiro login
+    # (True para usuários importados via CSV)
     must_change_password: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False
     )
@@ -87,4 +123,45 @@ class User:
     )
     updated_at: Mapped[datetime] = mapped_column(
         init=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    # ------------------------------------------------------------------ #
+    # Relacionamentos (não participam do __init__ gerado pelo dataclass)  #
+    # ------------------------------------------------------------------ #
+
+    # Responsável → lista de alunos sob sua responsabilidade
+    # Carregamento: selectin (2 queries — evita produto cartesiano em joins
+    # auto-referentes e funciona igualmente bem no SQLite e PostgreSQL)
+    students: Mapped[list['User']] = relationship(
+        'User',
+        secondary='guardian_student',
+        primaryjoin='User.id == foreign(guardian_student.c.guardian_id)',
+        secondaryjoin='User.id == foreign(guardian_student.c.student_id)',
+        lazy='noload',
+        init=False,
+        default_factory=list,
+        viewonly=False,
+    )
+
+    # Aluno → lista de responsáveis
+    # Carregamento: selectin load (2 queries, evita produto cartesiano em M×N)
+    guardians: Mapped[list['User']] = relationship(
+        'User',
+        secondary='guardian_student',
+        primaryjoin='User.id == foreign(guardian_student.c.student_id)',
+        secondaryjoin='User.id == foreign(guardian_student.c.guardian_id)',
+        lazy='noload',
+        init=False,
+        default_factory=list,
+        viewonly=False,
+        overlaps='students',
+    )
+
+    # Sala (objeto, não só FK)
+    classroom: Mapped['Classroom | None'] = relationship(
+        'Classroom',
+        lazy='noload',
+        init=False,
+        default=None,
+        foreign_keys='User.classroom_id',
     )

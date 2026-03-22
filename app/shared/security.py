@@ -8,10 +8,11 @@ from jwt import DecodeError, ExpiredSignatureError, decode, encode
 from pwdlib import PasswordHash
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import noload
 
 from app.core.settings import Settings
 from app.domains.users.models import User
-from app.shared.database import get_session
+from app.shared.db.database import get_session
 
 settings = Settings()
 pwd_context = PasswordHash.recommended()
@@ -78,7 +79,13 @@ async def get_current_user(
         raise credentials_exception
 
     user = await session.scalar(
-        select(User).where(User.email == subject_email)
+        select(User)
+        .where(User.email == subject_email)
+        .options(
+            noload(User.students),
+            noload(User.guardians),
+            noload(User.classroom),
+        )
     )
 
     if not user:

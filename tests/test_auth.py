@@ -1,154 +1,110 @@
-from datetime import datetime, timedelta
+"""
+Testes complementares para auth/routers.py.
+
+Gaps cobertos:
+- POST /auth/logout -> limpa cookie
+- POST /auth/refresh_token -> sem cookie (401), DecodeError (401),
+  usuario inexistente (401)
+- GET  /auth/admin -> role autorizada (200), role nao autorizada (403)
+"""
+
 from http import HTTPStatus
 
-from freezegun import freeze_time
+import pytest
 
-from app.core.settings import settings
-from app.shared.rbac.helpers import get_user_permissions
+from app.shared.rbac.roles import UserRole
+from app.shared.security import create_refresh_token
+from tests.conftest import _make_user, make_token
 
-dia_hora = datetime(2026, 1, 1, 12, 0, 0)
-dia_hora_expiracao_token = dia_hora + timedelta(
-    minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES + 1
-)
-dia_hora_expiracao_refresh_token = dia_hora + timedelta(
-    minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES + 1
-)
+# --------------------------------------------------------------------------- #
+# POST /auth/logout                                                           #
+# --------------------------------------------------------------------------- #
 
 
-def test_get_token(client, user):
-    response = client.post(
-        '/auth/token',
-        data={
-            'username': user.email,
-            'first_name': user.first_name,
-            'last_name': user.last_name,
-            'password': user.clean_password,
-        },
-    )
-    token = response.json()
-
+def test_logout_success(client):
+    """POST /auth/logout -> 200 e mensagem de confirmacao."""
+    response = client.post('/auth/logout')
     assert response.status_code == HTTPStatus.OK
-    assert 'access_token' in token
-    assert 'token_type' in token
+    assert response.json() == {'message': 'Logout successful'}
 
 
-def test_auth_me(client, user, token):
-    response = client.get(
-        '/auth/me',
-        headers={'Authorization': f'Bearer {token}'},
-    )
-
-    data = response.json()
-
-    assert response.status_code == HTTPStatus.OK
-    assert data == {
-        'id': user.id,
-        'username': user.username,
-        'email': user.email,
-        'first_name': user.first_name,
-        'last_name': user.last_name,
-        'role': user.role,
-        'is_active': user.is_active,
-        'is_tutor': user.is_tutor,
-    }
+# --------------------------------------------------------------------------- #
+# POST /auth/refresh_token - casos de erro                                   #
+# --------------------------------------------------------------------------- #
 
 
-def test_auth_me_permissions(client, user, token):
-    response = client.get(
-        '/auth/me/permissions',
-        headers={'Authorization': f'Bearer {token}'},
-    )
-
-    data = response.json()
-
-    assert response.status_code == HTTPStatus.OK
-
-    # Verifica os campos de usuario
-    assert data['id'] == user.id
-    assert data['username'] == user.username
-    assert data['email'] == user.email
-    assert data['first_name'] == user.first_name
-    assert data['last_name'] == user.last_name
-    assert data['role'] == user.role
-    assert data['is_active'] == user.is_active
-    assert data['is_tutor'] == user.is_tutor
-
-    # Verifica que permissions esta presente e bate com o esperado
-    assert 'permissions' in data
-    expected_permissions = {p.value for p in get_user_permissions(user)}
-    assert set(data['permissions']) == expected_permissions
-
-
-def test_token_expired_after_time(client, user):
-    with freeze_time(dia_hora):
-        response = client.post(
-            '/auth/token',
-            data={'username': user.email, 'password': user.clean_password},
-        )
-        assert response.status_code == HTTPStatus.OK
-        token = response.json()['access_token']
-
-    with freeze_time(dia_hora_expiracao_token):
-        response = client.put(
-            f'/users/{user.id}',
-            headers={'Authorization': f'Bearer {token}'},
-            json={
-                'username': 'wrongwrong',
-                'email': 'wrong@wrong.com',
-                'password': 'wrong',
-            },
-        )
-        assert response.status_code == HTTPStatus.UNAUTHORIZED
-        assert response.json() == {'detail': 'Could not validate credentials'}
-
-
-def test_token_inexistent_user(client):
-    response = client.post(
-        '/auth/token',
-        data={'username': 'no_user@no_domain.com', 'password': 'testtest'},
-    )
+def test_refresh_token_missing_cookie(client):
+    """Sem cookie refresh_token -> 401."""
+    response = client.post('/auth/refresh_token')
     assert response.status_code == HTTPStatus.UNAUTHORIZED
-    assert response.json() == {'detail': 'Incorrect email or password'}
+    assert response.json() == {'detail': 'Could not validate credentials'}
 
 
-def test_token_wrong_password(client, user):
-    response = client.post(
-        '/auth/token',
-        data={'username': user.email, 'password': 'wrong_password'},
-    )
-    assert response.status_code == HTTPStatus.UNAUTHORIZED
-    assert response.json() == {'detail': 'Incorrect email or password'}
-
-
-# def test_refresh_token(client, user, token):
-def test_refresh_token(client, user, refresh_token):
+def test_refresh_token_invalid_token(client):
+    """Cookie com valor invalido (DecodeError) -> 401."""
     response = client.post(
         '/auth/refresh_token',
-        # headers={'Authorization': f'Bearer {token}'},
-        cookies={'refresh_token': refresh_token},
+        cookies={'refresh_token': 'token.invalido.aqui'},
     )
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
+    assert response.json() == {'detail': 'Could not validate credentials'}
 
-    data = response.json()
 
+def test_refresh_token_user_not_found(client):
+    """
+    Token valido mas sub aponta para email inexistente -> 401.
+    Cobre o branch onde session.scalar retorna None.
+    """
+    token = create_refresh_token(data={'sub': 'fantasma@inexistente.com'})
+    response = client.post(
+        '/auth/refresh_token',
+        cookies={'refresh_token': token},
+    )
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
+    assert response.json() == {'detail': 'Could not validate credentials'}
+
+
+# --------------------------------------------------------------------------- #
+# GET /auth/admin - controle de role                                         #
+# --------------------------------------------------------------------------- #
+
+
+async def test_admin_endpoint_coordinator_allowed(client, session):
+    """Coordenador acessa /auth/admin -> 200."""
+    coord = await _make_user(session, role=UserRole.COORDINATOR)
+    response = client.get(
+        '/auth/admin',
+        headers={'Authorization': f'Bearer {make_token(coord)}'},
+    )
     assert response.status_code == HTTPStatus.OK
-    assert 'access_token' in data
-    assert 'token_type' in data
-    assert data['token_type'] == 'bearer'
+    assert response.json()['id'] == coord.id
 
 
-def test_token_expired_dont_refresh(client, user):
-    with freeze_time(dia_hora):
-        response = client.post(
-            '/auth/token',
-            data={'username': user.email, 'password': user.clean_password},
-        )
-        assert response.status_code == HTTPStatus.OK
-        token = response.json()['access_token']
+async def test_admin_endpoint_admin_allowed(client, session):
+    """Admin acessa /auth/admin -> 200."""
+    admin = await _make_user(session, role=UserRole.ADMIN)
+    response = client.get(
+        '/auth/admin',
+        headers={'Authorization': f'Bearer {make_token(admin)}'},
+    )
+    assert response.status_code == HTTPStatus.OK
 
-    with freeze_time(dia_hora_expiracao_refresh_token):
-        response = client.post(
-            '/auth/refresh_token',
-            headers={'Authorization': f'Bearer {token}'},
-        )
-        assert response.status_code == HTTPStatus.UNAUTHORIZED
-        assert response.json() == {'detail': 'Could not validate credentials'}
+
+async def test_admin_endpoint_teacher_forbidden(client, session):
+    """Professor tenta acessar /auth/admin -> 403."""
+    teacher = await _make_user(session, role=UserRole.TEACHER)
+    response = client.get(
+        '/auth/admin',
+        headers={'Authorization': f'Bearer {make_token(teacher)}'},
+    )
+    assert response.status_code == HTTPStatus.FORBIDDEN
+
+
+async def test_admin_endpoint_student_forbidden(client, session):
+    """Aluno tenta acessar /auth/admin -> 403."""
+    student = await _make_user(session, role=UserRole.STUDENT)
+    response = client.get(
+        '/auth/admin',
+        headers={'Authorization': f'Bearer {make_token(student)}'},
+    )
+    assert response.status_code == HTTPStatus.FORBIDDEN

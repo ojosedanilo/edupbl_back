@@ -40,7 +40,7 @@ def require_permission(user: User, permission: SystemPermissions):
 
 
 def require_any_permission(user: User, permission: SystemPermissions):
-    return helpers.user_has_any_permission(user, permission)
+    return helpers.user_has_any_permission(user, {permission})
 
 
 def require_all_permissions(user: User, permissions: set[SystemPermissions]):

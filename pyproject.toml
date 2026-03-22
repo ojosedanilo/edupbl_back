@@ -47,15 +47,17 @@ quote-style = 'single'
 [tool.pytest.ini_options]
 pythonpath = "."
 asyncio_mode = 'auto'
+asyncio_default_fixture_loop_scope = "function"
 addopts = '-p no:warnings'
 
 [tool.taskipy.tasks]
 lint = 'ruff check'
 pre_format = 'ruff check --fix'
 format = 'ruff format'
-run = 'fastapi dev app/app.py'
-pre_test = 'task lint'
-test = 'pytest -s -x --cov=app -vv'
+run = 'fastapi dev app/main.py'
+test = 'pytest -vv -x -s --cov=app'
+test_all = 'pytest -vv -rA --cov=app --cov-report=term-missing --cov-report=html'
+test_resume = 'pytest -q -rA --tb=no'
 post_test = 'coverage html'
 
 [build-system]

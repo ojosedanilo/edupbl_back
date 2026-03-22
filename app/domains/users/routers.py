@@ -15,7 +15,7 @@ from app.domains.users.schemas import (
     UserSchema,
     UserUpdate,
 )
-from app.shared.database import get_session
+from app.shared.db.database import get_session
 from app.shared.security import (
     get_current_user,
     get_password_hash,

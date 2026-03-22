@@ -10,7 +10,8 @@ class Message(BaseModel):
     message: str
 
 
-# Padrão válido para username: apenas letras sem acento, dígitos, ponto e underscore
+# Padrão válido para username:
+# apenas letras sem acento, dígitos, ponto e underscore
 _USERNAME_RE = re.compile(r'^[a-z0-9_.]+$')
 
 
@@ -29,7 +30,10 @@ class UserSchema(BaseModel):
     @field_validator('username')
     @classmethod
     def username_sem_acentos(cls, v: str) -> str:
-        """Garante que o username só contenha [a-z0-9_.] — sem acentos, ç ou espaços."""
+        """
+        Garante que o username só contenha
+        [a-z0-9_.] — sem acentos, ç ou espaços.
+        """
         if not _USERNAME_RE.match(v):
             raise ValueError(
                 'Username inválido: use apenas letras minúsculas sem acento, '

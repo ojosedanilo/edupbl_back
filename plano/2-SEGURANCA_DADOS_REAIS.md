@@ -41,7 +41,7 @@ backend/
 ├── scripts/
 │   ├── seed_db.py           # Usuários FAKE para dev
 │   └── import_real_users.py # Script de importação (SEM dados reais)
-├── data/                     # ← Pasta LOCAL, não vai pro Git
+├── data/                    # ← Pasta LOCAL, não vai pro Git
 │   ├── .gitkeep              # Mantém a pasta vazia no Git
 │   ├── professores.csv       # ← IGNORADO pelo Git
 │   ├── alunos_3a.csv         # ← IGNORADO pelo Git

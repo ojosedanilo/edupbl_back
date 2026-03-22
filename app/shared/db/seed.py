@@ -13,15 +13,15 @@ from app.shared.security import get_password_hash
 # ---------------------------------------------------------------------------
 
 CLASSROOMS = {
-    1:  '1º ano A',
-    2:  '1º ano B',
-    3:  '1º ano C',
-    4:  '1º ano D',
-    5:  '2º ano A',
-    6:  '2º ano B',
-    7:  '2º ano C',
-    8:  '2º ano D',
-    9:  '3º ano A',
+    1: '1º ano A',
+    2: '1º ano B',
+    3: '1º ano C',
+    4: '1º ano D',
+    5: '2º ano A',
+    6: '2º ano B',
+    7: '2º ano C',
+    8: '2º ano D',
+    9: '3º ano A',
     10: '3º ano B',
     11: '3º ano C',
     12: '3º ano D',
@@ -55,6 +55,7 @@ async def seed_classrooms(session: AsyncSession) -> dict[int, int]:
 # Normalização de texto para username
 # ---------------------------------------------------------------------------
 
+
 def _normalizar(texto: str) -> str:
     """Remove acentos, cedilha e caracteres especiais.
 
@@ -67,15 +68,20 @@ def _normalizar(texto: str) -> str:
     # NFD separa letra + marca diacrítica (acento, til, cedilha...)
     decomposto = unicodedata.normalize('NFD', texto)
     # Categoria 'Mn' = Mark, Nonspacing (os acentos/til/cedilha separados)
-    sem_acento = ''.join(c for c in decomposto if unicodedata.category(c) != 'Mn')
-    # Minúsculas; mantém só letras e dígitos (ponto adicionado ao montar o username)
+    sem_acento = ''.join(
+        c for c in decomposto if unicodedata.category(c) != 'Mn'
+    )
+    # Minúsculas; mantém só letras e dígitos
+    # (ponto adicionado ao montar o username)
     return ''.join(c for c in sem_acento.lower() if c.isalnum())
 
 
 def _base_username(nome: str, sobrenome: str) -> str:
-    """Monta a base do username: primeiro_nome.ultimo_sobrenome, sem acentos."""
-    primeiro = _normalizar(nome.split()[0])
-    ultimo   = _normalizar(sobrenome.split()[-1])
+    """
+    Monta a base do username: primeiro_nome.ultimo_sobrenome, sem acentos.
+    """
+    primeiro = _normalizar(nome.split(maxsplit=1)[0])
+    ultimo = _normalizar(sobrenome.rsplit(maxsplit=1)[-1])
     return f'{primeiro}.{ultimo}'
 
 
@@ -85,7 +91,8 @@ async def _gerar_username_unico(
     sobrenome: str,
     usados_no_lote: set[str],
 ) -> str:
-    """Retorna um username único, verificando tanto o banco quanto o lote atual.
+    """
+    Retorna um username único, verificando tanto o banco quanto o lote atual.
 
     Sequência: joao.silva -> joao.silva1 -> joao.silva2 -> ...
     """
@@ -113,6 +120,7 @@ async def _gerar_username_unico(
 # ---------------------------------------------------------------------------
 # Seed de desenvolvimento (usuários de teste)
 # ---------------------------------------------------------------------------
+
 
 async def seed_test_users(session: AsyncSession):
     """Cria usuários de teste para cada role.
@@ -232,27 +240,30 @@ DATA_DIR = Path(__file__).parent.parent.parent / 'data'
 
 # (nome_arquivo, role_padrão, is_tutor, usa_campo_sala)
 CSV_CONFIG = [
-    ('admins.csv',         UserRole.ADMIN,       False, False),
-    ('coordenadores.csv',  UserRole.COORDINATOR, False, False),
-    ('professores.csv',    UserRole.TEACHER,     False, False),
-    ('professores_dt.csv', UserRole.TEACHER,     True,  True),
-    ('alunos.csv',         UserRole.STUDENT,     False, True),
-    ('porteiros.csv',      UserRole.PORTER,      False, False),
-    ('responsaveis.csv',   UserRole.GUARDIAN,    False, False),
+    ('admins.csv', UserRole.ADMIN, False, False),
+    ('coordenadores.csv', UserRole.COORDINATOR, False, False),
+    ('professores.csv', UserRole.TEACHER, False, False),
+    ('professores_dt.csv', UserRole.TEACHER, True, True),
+    ('alunos.csv', UserRole.STUDENT, False, True),
+    ('porteiros.csv', UserRole.PORTER, False, False),
+    ('responsaveis.csv', UserRole.GUARDIAN, False, False),
 ]
 
 
-async def seed_real_users(session: AsyncSession):
-    """Importa usuários reais de CSVs em backend/data/.
-
-    - Usernames são gerados automaticamente e normalizados (sem acentos/ç).
-    - Conflitos de username resolvidos com sufixo numérico: a.b -> a.b1 -> a.b2.
-    - must_change_password=True: força troca de senha no primeiro login.
-    - Idempotente por email: usuários já existentes são pulados silenciosamente.
-    """
+async def seed_real_users(session: AsyncSession):  # noqa: PLR0914
     classroom_map = await seed_classrooms(session)
 
-    # Conjunto de usernames já decididos nesta execução (não commitados ainda)
+    print('\n📦 Carregando dados existentes do banco...')
+
+    # 🔥 1. Carrega tudo de uma vez
+    existing_emails = set(
+        (await session.execute(select(User.email))).scalars().all()
+    )
+
+    existing_usernames = set(
+        (await session.execute(select(User.username))).scalars().all()
+    )
+
     usados_no_lote: set[str] = set()
     total_criados = 0
 
@@ -264,67 +275,76 @@ async def seed_real_users(session: AsyncSession):
             continue
 
         print(f'\n📄 Processando: {filename}')
-        criados = 0
-        erros   = 0
+
+        novos_usuarios = []
+        erros = 0
 
         with open(filepath, encoding='utf-8') as f:
-            reader = csv.DictReader(f)
+            reader = list(csv.DictReader(f))  # 🔥 carrega tudo
 
-            for linha, row in enumerate(reader, start=2):
-                try:
-                    nome      = row['nome'].strip()
-                    sobrenome = row['sobrenome'].strip()
-                    email     = row['email'].strip()
-                    senha     = row['senha'].strip()
+        for linha, row in enumerate(reader, start=2):
+            try:
+                nome = row['nome'].strip()
+                sobrenome = row['sobrenome'].strip()
+                email = row['email'].strip().lower()
+                senha = row['senha'].strip()
 
-                    role_str = row.get('role', '').strip()
-                    role = UserRole(role_str) if role_str else default_role
+                # 🔥 idempotência sem query
+                if email in existing_emails:
+                    continue
 
-                    # Sala: lê coluna "sala" (número 1–12)
-                    classroom_id = None
-                    if usa_sala:
-                        sala_str = row.get('sala', '').strip()
-                        if sala_str:
-                            sala_num = int(sala_str)
-                            classroom_id = classroom_map.get(sala_num)
-                            if classroom_id is None:
-                                print(
-                                    f'  AVISO linha {linha}: sala "{sala_str}" inválida — campo ignorado.'
-                                )
+                role_str = row.get('role', '').strip()
+                role = UserRole(role_str) if role_str else default_role
 
-                    username = await _gerar_username_unico(
-                        session, nome, sobrenome, usados_no_lote
-                    )
+                # Sala
+                classroom_id = None
+                if usa_sala:
+                    sala = row.get('sala', '').strip()
+                    if sala:
+                        classroom_id = classroom_map.get(int(sala))
 
-                    user = User(
-                        username=username,
-                        email=email,
-                        password=get_password_hash(senha),
-                        first_name=nome,
-                        last_name=sobrenome,
-                        role=role,
-                        is_tutor=default_is_tutor,
-                        is_active=True,
-                        classroom_id=classroom_id,
-                        # Força troca de senha no primeiro login
-                        must_change_password=True,
-                    )
+                # 🔥 username sem query
+                base = _base_username(nome, sobrenome)
+                username = base
+                i = 1
 
-                    # Savepoint por linha: duplicatas rejeitadas pelo banco
-                    # não contaminam o restante do lote.
-                    async with session.begin_nested():
-                        session.add(user)
+                while (
+                    username in existing_usernames
+                    or username in usados_no_lote
+                ):
+                    username = f'{base}{i}'
+                    i += 1
 
-                    criados += 1
+                usados_no_lote.add(username)
+                existing_usernames.add(username)
 
-                except Exception:
-                    erros += 1
+                user = User(
+                    username=username,
+                    email=email,
+                    password=get_password_hash(senha),
+                    first_name=nome,
+                    last_name=sobrenome,
+                    role=role,
+                    is_tutor=default_is_tutor,
+                    is_active=True,
+                    classroom_id=classroom_id,
+                    must_change_password=True,
+                )
 
-        await session.commit()
-        sufixo = ' [Professores DT]' if default_is_tutor else ''
-        print(f'  ✅ {criados} usuários criados{sufixo}')
+                novos_usuarios.append(user)
+                existing_emails.add(email)
+                total_criados += 1
+
+            except Exception:
+                erros += 1
+
+        # 🔥 batch insert (sem savepoint por linha)
+        if novos_usuarios:
+            session.add_all(novos_usuarios)
+            await session.commit()
+
+        print(f'  ✅ {len(novos_usuarios)} usuários criados')
         if erros:
-            print(f'  ⚠️  {erros} linha(s) com erro')
-        total_criados += criados
+            print(f'  ⚠️  {erros} erro(s)')
 
-    print(f'\n✅ {total_criados} usuários reais importados com sucesso!')
+    print(f'\n✅ {total_criados} usuários importados!')

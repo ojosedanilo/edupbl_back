@@ -1,52 +1,93 @@
-from contextlib import contextmanager
-from datetime import datetime
+import inspect  # noqa: F401, I001
 
-import factory
-import pytest
-import pytest_asyncio
-from fastapi.testclient import TestClient
-from sqlalchemy import event
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.pool import StaticPool
 
-from app.app import app
-from app.domains.users.models import User, table_registry
-from app.shared.database import get_session
-from app.shared.rbac.roles import UserRole
-from app.shared.security import (
+from contextlib import contextmanager  # noqa: E402, I001
+from datetime import datetime  # noqa: E402
+
+import factory  # noqa: E402
+import pytest  # noqa: E402
+import pytest_asyncio  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+from sqlalchemy import event  # noqa: E402
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine  # noqa: E402
+from sqlalchemy.pool import StaticPool  # noqa: E402
+
+from app.main import app  # noqa: E402
+from app.shared.db.registry import mapper_registry  # noqa: E402, I001
+
+# import app.shared.db.models  # noqa: E402, I001
+from app.domains.users.models import User  # noqa: E402, I001
+from app.domains.occurrences.models import Occurrence  # noqa: E402, F401, I001
+from app.shared.db.database import get_session  # noqa: E402, I001
+from app.shared.rbac.roles import UserRole  # noqa: E402, I001
+from app.shared.security import (  # noqa: E402, I001
     create_access_token,
     create_refresh_token,
     get_password_hash,
 )
 
+# --------------------------------------------------------------------------- #
+# Engine compartilhada entre session de teste e requests HTTP                 #
+# --------------------------------------------------------------------------- #
+#
+# Arquitetura:
+#   engine  ->  cria as tabelas, compartilhada por TODOS do mesmo teste
+#   session ->  AsyncSession para o codigo do teste (fixtures, _make_user, etc.)
+#   client  ->  TestClient cujo get_session abre uma NOVA AsyncSession
+#               da mesma engine a cada request
+#
+# Por que nova sessao por request?
+# O TestClient despacha requests em uma thread/event-loop separada (anyio).
+# Compartilhar o mesmo objeto AsyncSession entre a corrotina do teste e
+# a corrotina do request causa "another operation is in progress" no aiosqlite.
+# Com StaticPool, todas as conexoes apontam para o mesmo banco em memoria,
+# entao dados commitados pelo fixture ficam visiveis para o request.
+# --------------------------------------------------------------------------- #
 
-@pytest.fixture
-def client(session):
-    def get_session_override():
-        return session
 
-    with TestClient(app) as client:
-        app.dependency_overrides[get_session] = get_session_override
-        yield client
+@pytest_asyncio.fixture(loop_scope='function')
+async def engine():
+    _engine = create_async_engine(
+        'sqlite+aiosqlite:///:memory:',
+        connect_args={'check_same_thread': False},
+        poolclass=StaticPool,
+        # echo=True,
+    )
+    async with _engine.begin() as conn:
+        await conn.run_sync(mapper_registry.metadata.create_all)
+
+    yield _engine
+
+    async with _engine.begin() as conn:
+        await conn.run_sync(mapper_registry.metadata.drop_all)
+
+    await _engine.dispose()
+
+
+@pytest_asyncio.fixture(loop_scope='function')
+async def session(engine):
+    async with AsyncSession(engine, expire_on_commit=False) as _session:
+        yield _session
+
+
+@pytest_asyncio.fixture(loop_scope='function')
+async def client(engine):
+    async def get_session_override():
+        async with AsyncSession(engine, expire_on_commit=False) as _session:
+            yield _session
+
+    print(app, type(app))
+    app.dependency_overrides[get_session] = get_session_override
+
+    with TestClient(app) as _client:
+        yield _client
 
     app.dependency_overrides.clear()
 
 
-@pytest_asyncio.fixture
-async def session():
-    engine = create_async_engine(
-        'sqlite+aiosqlite:///:memory:',
-        connect_args={'check_same_thread': False},
-        poolclass=StaticPool,
-    )
-    async with engine.begin() as conn:
-        await conn.run_sync(table_registry.metadata.create_all)
-
-    async with AsyncSession(engine, expire_on_commit=False) as session:
-        yield session
-
-    async with engine.begin() as conn:
-        await conn.run_sync(table_registry.metadata.drop_all)
+# --------------------------------------------------------------------------- #
+# Helper de tempo mockado                                                     #
+# --------------------------------------------------------------------------- #
 
 
 @contextmanager
@@ -69,48 +110,9 @@ def mock_db_time():
     return _mock_db_time
 
 
-@pytest_asyncio.fixture
-async def user(session):
-    password = 'testtest'
-    user = UserFactory(password=get_password_hash(password))
-    session.add(user)
-    await session.commit()
-    await session.refresh(user)
-
-    user.clean_password = password
-
-    return user
-
-
-@pytest_asyncio.fixture
-async def other_user(session):
-    password = 'testtest'
-    user = UserFactory(password=get_password_hash(password))
-
-    session.add(user)
-    await session.commit()
-    await session.refresh(user)
-
-    user.clean_password = password
-
-    return user
-
-
-@pytest.fixture
-def token(client, user):
-    """
-    response = client.post(
-        '/auth/token',
-        data={'username': user.email, 'password': user.clean_password},
-    )
-    return response.json()['access_token']
-    """
-    return create_access_token(data={'sub': user.email})
-
-
-@pytest.fixture
-def refresh_token(user):
-    return create_refresh_token(data={'sub': user.email})
+# --------------------------------------------------------------------------- #
+# Factory de usuario                                                          #
+# --------------------------------------------------------------------------- #
 
 
 class UserFactory(factory.Factory):
@@ -125,3 +127,86 @@ class UserFactory(factory.Factory):
     role = UserRole.STUDENT
     is_tutor = False
     is_active = True
+    must_change_password = False
+
+
+# --------------------------------------------------------------------------- #
+# Helper interno de criacao de usuario                                        #
+# --------------------------------------------------------------------------- #
+
+
+async def _make_user(session, **kwargs):
+    """Cria e persiste um usuario, expondo clean_password."""
+    password = kwargs.pop('clean_password', 'testtest')
+    user = UserFactory(password=get_password_hash(password), **kwargs)
+    session.add(user)
+    await session.commit()
+    await session.refresh(user)
+    user.clean_password = password
+    return user
+
+
+# --------------------------------------------------------------------------- #
+# Fixtures genericas                                                          #
+# --------------------------------------------------------------------------- #
+
+
+@pytest_asyncio.fixture
+async def user(session):
+    return await _make_user(session)
+
+
+@pytest_asyncio.fixture
+async def other_user(session):
+    return await _make_user(session)
+
+
+@pytest_asyncio.fixture
+async def student_user(session):
+    return await _make_user(session, role=UserRole.STUDENT, is_tutor=False)
+
+
+@pytest_asyncio.fixture
+async def guardian_user(session):
+    return await _make_user(session, role=UserRole.GUARDIAN, is_tutor=False)
+
+
+@pytest_asyncio.fixture
+async def teacher_user(session):
+    return await _make_user(session, role=UserRole.TEACHER, is_tutor=False)
+
+
+@pytest_asyncio.fixture
+async def tutor_user(session):
+    """Professor Diretor de Turma."""
+    return await _make_user(session, role=UserRole.TEACHER, is_tutor=True)
+
+
+@pytest_asyncio.fixture
+async def coordinator_user(session):
+    return await _make_user(session, role=UserRole.COORDINATOR, is_tutor=False)
+
+
+@pytest_asyncio.fixture
+async def admin_user(session):
+    return await _make_user(session, role=UserRole.ADMIN, is_tutor=False)
+
+
+# --------------------------------------------------------------------------- #
+# Tokens                                                                      #
+# --------------------------------------------------------------------------- #
+
+
+@pytest_asyncio.fixture
+async def token(user):
+    return create_access_token(data={'sub': user.email})
+
+
+@pytest_asyncio.fixture
+async def refresh_token(user):
+    return create_refresh_token(data={'sub': user.email})
+
+
+def make_token(u):
+    """Gera access token para qualquer usuario - helper nos testes."""
+    return create_access_token(data={'sub': u.email})

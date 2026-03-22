@@ -8,17 +8,17 @@ Uso: uv run python scripts/reset_db.py
 
 import asyncio
 
-from app.domains.users.models import table_registry
-from app.shared.database import engine
+from app.shared.db.database import engine
+from app.shared.db.registry import mapper_registry
 
 
 async def reset_database():
     async with engine.begin() as conn:
         print('Removendo tabelas...')
-        await conn.run_sync(table_registry.metadata.drop_all)
+        await conn.run_sync(mapper_registry.metadata.drop_all)
 
         print('Criando tabelas...')
-        await conn.run_sync(table_registry.metadata.create_all)
+        await conn.run_sync(mapper_registry.metadata.create_all)
 
     print('Banco resetado com sucesso!')
 
