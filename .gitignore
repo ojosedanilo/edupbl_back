@@ -2,6 +2,7 @@
 /edupbl_backend.egg-info
 *.pyc
 .coverage
+backend.zip
 
 # Dados reais - NUNCA commitar
 data/*.csv
