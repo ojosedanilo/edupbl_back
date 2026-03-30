@@ -1,3 +1,10 @@
+"""
+Funções auxiliares de verificação de permissões.
+
+Estas funções são usadas internamente pelo PermissionChecker (dependencies.py)
+e podem ser chamadas diretamente em lógica de negócio dentro das rotas.
+"""
+
 from app.domains.users.models import User
 from app.shared.rbac.permissions import (
     ROLE_PERMISSIONS,
@@ -8,13 +15,15 @@ from app.shared.rbac.roles import UserRole
 
 
 def get_user_permissions(user: User) -> set[SystemPermissions]:
-    """Obtém as permissões do usuário"""
-    # Obtém as permissões da role do usuário, ou retorna um set vazio
+    """
+    Retorna o conjunto completo de permissões do usuário.
+
+    Combina as permissões da role + permissões extras de DT (se aplicável).
+    A flag is_tutor só adiciona permissões quando role == TEACHER —
+    um aluno com is_tutor=True por engano não recebe permissões extras.
+    """
     permissions = ROLE_PERMISSIONS.get(user.role, set()).copy()
 
-    # Permissões extras SOMENTE para Professor Diretor de Turma
-    # (TEACHER + is_tutor)
-    # Um aluno com is_tutor=True por engano não deve receber essas permissões
     if user.is_tutor and user.role == UserRole.TEACHER:
         permissions.update(TUTOR_EXTRA_PERMISSIONS)
 
@@ -22,21 +31,19 @@ def get_user_permissions(user: User) -> set[SystemPermissions]:
 
 
 def user_has_permission(user: User, permission: SystemPermissions) -> bool:
-    """Verifica se usuário tem a permissão específica"""
-    permissions = get_user_permissions(user)
-    return permission in permissions
+    """Retorna True se o usuário possui a permissão específica."""
+    return permission in get_user_permissions(user)
 
 
 def user_has_any_permission(
     user: User, permissions: set[SystemPermissions]
 ) -> bool:
-    """Verifica se usuário tem QUALQUER uma das permissões fornecidas"""
-    # Usa set para garantir que isdisjoint compare elementos, não caracteres
-    return not get_user_permissions(user).isdisjoint(set(permissions))
+    """Retorna True se o usuário possui PELO MENOS UMA das permissões."""
+    return not get_user_permissions(user).isdisjoint(permissions)
 
 
 def user_has_all_permissions(
     user: User, permissions: set[SystemPermissions]
 ) -> bool:
-    """Verifica se usuário tem TODAS as permissões"""
+    """Retorna True somente se o usuário possui TODAS as permissões."""
     return permissions.issubset(get_user_permissions(user))

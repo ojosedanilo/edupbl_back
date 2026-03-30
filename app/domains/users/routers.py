@@ -1,3 +1,13 @@
+"""
+Rotas de usuários: CRUD e troca de senha.
+
+Regras de autorização:
+  - Criar usuário: aberto (sem autenticação)
+  - Listar usuários: autenticado
+  - Atualizar / Deletar: apenas o próprio usuário
+  - Trocar senha: próprio usuário, com confirmação da senha atual
+"""
+
 from http import HTTPStatus
 from typing import Annotated
 
@@ -8,7 +18,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.domains.users.models import User
 from app.domains.users.schemas import (
     FilterPage,
-    Message,
     PasswordChange,
     UserList,
     UserPublic,
@@ -16,6 +25,7 @@ from app.domains.users.schemas import (
     UserUpdate,
 )
 from app.shared.db.database import get_session
+from app.shared.schemas import Message
 from app.shared.security import (
     get_current_user,
     get_password_hash,
@@ -23,38 +33,47 @@ from app.shared.security import (
 )
 
 router = APIRouter(prefix='/users', tags=['users'])
+
 Session = Annotated[AsyncSession, Depends(get_session)]
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
+# --------------------------------------------------------------------------- #
+# POST /users — Criar usuário                                                 #
+# --------------------------------------------------------------------------- #
+
+
 @router.post('/', status_code=HTTPStatus.CREATED, response_model=UserPublic)
 async def create_user(user: UserSchema, session: Session):
-    db_user = await session.scalar(
+    """
+    Cria um novo usuário.
+
+    Verifica conflito de username e e-mail antes de inserir.
+    Retorna mensagens de erro distintas para cada campo em conflito.
+    """
+    existing = await session.scalar(
         select(User).where(
             (User.username == user.username) | (User.email == user.email)
         )
     )
 
-    if db_user:
-        if db_user.username == user.username:
+    if existing:
+        if existing.username == user.username:
             raise HTTPException(
                 status_code=HTTPStatus.CONFLICT,
                 detail='Username already exists',
             )
-        elif db_user.email == user.email:
-            raise HTTPException(
-                status_code=HTTPStatus.CONFLICT,
-                detail='Email already exists',
-            )
-
-    hashed_password = get_password_hash(user.password)
+        raise HTTPException(
+            status_code=HTTPStatus.CONFLICT,
+            detail='Email already exists',
+        )
 
     db_user = User(
         email=user.email,
         username=user.username,
         first_name=user.first_name,
         last_name=user.last_name,
-        password=hashed_password,
+        password=get_password_hash(user.password),
         role=user.role,
         is_tutor=user.is_tutor,
         is_active=user.is_active,
@@ -64,21 +83,29 @@ async def create_user(user: UserSchema, session: Session):
     session.add(db_user)
     await session.commit()
     await session.refresh(db_user)
-
     return db_user
+
+
+# --------------------------------------------------------------------------- #
+# GET /users — Listar usuários (com paginação)                                #
+# --------------------------------------------------------------------------- #
 
 
 @router.get('/', response_model=UserList)
 async def read_users(
-    session: Session, filter_users: Annotated[FilterPage, Query()]
+    session: Session,
+    filter_users: Annotated[FilterPage, Query()],
 ):
-    query = await session.scalars(
+    """Lista usuários com paginação via offset/limit."""
+    result = await session.scalars(
         select(User).offset(filter_users.offset).limit(filter_users.limit)
     )
+    return {'users': result.all()}
 
-    users = query.all()
 
-    return {'users': users}
+# --------------------------------------------------------------------------- #
+# PUT /users/{user_id} — Atualizar usuário                                   #
+# --------------------------------------------------------------------------- #
 
 
 @router.put('/{user_id}', response_model=UserPublic)
@@ -88,12 +115,19 @@ async def update_user(
     session: Session,
     current_user: CurrentUser,
 ):
+    """
+    Atualiza os dados do usuário.
+
+    Apenas o próprio usuário pode se atualizar (self-service).
+    Verifica conflito de username/e-mail com outros usuários antes de salvar.
+    Apenas campos enviados na requisição são alterados (patch semântico via PUT).
+    """
     if current_user.id != user_id:
         raise HTTPException(
             status_code=HTTPStatus.FORBIDDEN, detail='Not enough permissions'
         )
 
-    # Validar conflitos de username/email antes de atualizar
+    # Verifica conflito de username/e-mail com outros usuários
     if user.username is not None or user.email is not None:
         conditions = []
         if user.username is not None:
@@ -101,30 +135,31 @@ async def update_user(
         if user.email is not None:
             conditions.append(User.email == user.email)
 
-        # Busca se existe outro usuário com username OU email que queremos usar
-        db_user = await session.scalar(select(User).where(or_(*conditions)))
+        conflicting = await session.scalar(
+            select(User).where(or_(*conditions))
+        )
 
-        # Se encontrou alguém E não é o próprio usuário atual
-        if db_user and db_user.id != current_user.id:
+        if conflicting and conflicting.id != current_user.id:
             raise HTTPException(
                 status_code=HTTPStatus.CONFLICT,
                 detail='Username or Email already exists',
             )
 
-    # Atualizar apenas campos que foram enviados
-    update_data = user.model_dump(exclude_unset=True)
-
-    for field, value in update_data.items():
+    # Aplica apenas os campos enviados (exclude_unset ignora omitidos)
+    for field, value in user.model_dump(exclude_unset=True).items():
         if field == 'password':
-            # Hash da senha antes de salvar
             setattr(current_user, field, get_password_hash(value))
         else:
             setattr(current_user, field, value)
 
     await session.commit()
     await session.refresh(current_user)
-
     return current_user
+
+
+# --------------------------------------------------------------------------- #
+# PATCH /users/me/password — Trocar senha                                    #
+# --------------------------------------------------------------------------- #
 
 
 @router.patch('/me/password', response_model=Message)
@@ -133,7 +168,11 @@ async def change_my_password(
     session: Session,
     current_user: CurrentUser,
 ):
-    """Troca a senha do usuário logado e limpa o flag must_change_password."""
+    """
+    Troca a senha do usuário logado e limpa o flag must_change_password.
+
+    Exige a senha atual para confirmar a identidade antes de aceitar a nova.
+    """
     if not verify_password(data.current_password, current_user.password):
         raise HTTPException(
             status_code=HTTPStatus.UNAUTHORIZED,
@@ -144,8 +183,12 @@ async def change_my_password(
     current_user.must_change_password = False
 
     await session.commit()
-
     return {'message': 'Password updated successfully'}
+
+
+# --------------------------------------------------------------------------- #
+# DELETE /users/{user_id} — Deletar usuário                                  #
+# --------------------------------------------------------------------------- #
 
 
 @router.delete('/{user_id}', response_model=Message)
@@ -154,6 +197,12 @@ async def delete_user(
     session: Session,
     current_user: CurrentUser,
 ):
+    """
+    Deleta o usuário. Apenas o próprio usuário pode se deletar.
+
+    Ocorrências criadas pelo usuário terão created_by_id → NULL (SET NULL).
+    Ocorrências sobre o usuário (aluno) serão deletadas (CASCADE).
+    """
     if current_user.id != user_id:
         raise HTTPException(
             status_code=HTTPStatus.FORBIDDEN, detail='Not enough permissions'
@@ -161,5 +210,4 @@ async def delete_user(
 
     await session.delete(current_user)
     await session.commit()
-
     return {'message': 'User deleted'}

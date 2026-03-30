@@ -1,3 +1,14 @@
+"""
+Models SQLAlchemy do domínio de usuários.
+
+Modelos:
+  Classroom — representa uma turma/sala da escola
+  User      — usuário do sistema (aluno, professor, responsável, etc.)
+
+Tabela de associação:
+  guardian_student — relação many-to-many entre responsável e aluno
+"""
+
 from datetime import datetime
 
 from sqlalchemy import (
@@ -21,7 +32,9 @@ from sqlalchemy.orm import (
 from app.shared.db.registry import mapper_registry
 from app.shared.rbac.roles import UserRole
 
-# Tabela de associação responsável ↔ aluno (many-to-many)
+# Tabela de associação many-to-many entre responsável (guardian) e aluno (student).
+# Ambas as FKs apontam para a mesma tabela `users`, por isso o modelo é auto-referente.
+# ondelete='CASCADE' garante que as entradas são removidas junto com o usuário.
 guardian_student = Table(
     'guardian_student',
     mapper_registry.metadata,
@@ -42,27 +55,31 @@ guardian_student = Table(
 
 @mapped_as_dataclass(mapper_registry)
 class Classroom:
-    """Representa uma turma/sala da escola."""
+    """Representa uma turma/sala da escola (ex: '1º ano A', '3º ano B')."""
 
     __tablename__ = 'classrooms'
 
     id: Mapped[int] = mapped_column(
         init=False, primary_key=True, nullable=False
     )
-
-    # Ex: "1º ano A", "2º ano B", "3º ano C"
     name: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
 
 
 @mapped_as_dataclass(mapper_registry)
 class User:
+    """
+    Usuário do sistema — representa alunos, professores, responsáveis,
+    coordenadores, porteiros e administradores.
+
+    Nota sobre CheckConstraint:
+      A validação de formato do username é feita pelo field_validator do
+      Pydantic (UserSchema) em vez de CheckConstraint no banco, pois SQLite
+      (usado nos testes) e PostgreSQL (produção) têm sintaxes de regex
+      incompatíveis. O constraint abaixo apenas impede usernames vazios.
+    """
+
     __tablename__ = 'users'
     __table_args__ = (
-        # Constraint portável: validada na camada Python (schema Pydantic).
-        # A CheckConstraint com regex usa sintaxe diferente em SQLite (~) e
-        # PostgreSQL (REGEXP / GLOB), por isso é omitida aqui para evitar
-        # erros nos testes (SQLite) e na produção (PostgreSQL).
-        # A validação real é feita pelo field_validator em UserSchema.
         CheckConstraint(
             'length(username) > 0',
             name='ck_users_username_nonempty',
@@ -73,18 +90,18 @@ class User:
         init=False, primary_key=True, nullable=False
     )
 
-    # Autenticação
+    # ── Autenticação ───────────────────────────────────────────────── #
     username: Mapped[str] = mapped_column(String(50), unique=True, index=True)
     email: Mapped[str] = mapped_column(
         String(255), unique=True, index=True, nullable=False
     )
     password: Mapped[str] = mapped_column(nullable=False)
 
-    # Dados pessoais
+    # ── Dados pessoais ─────────────────────────────────────────────── #
     first_name: Mapped[str] = mapped_column(String(100), nullable=False)
     last_name: Mapped[str] = mapped_column(String(100), nullable=False)
 
-    # Role e permissões
+    # ── Role e flags ───────────────────────────────────────────────── #
     role: Mapped[UserRole] = mapped_column(
         SQLEnum(
             UserRole,
@@ -95,21 +112,20 @@ class User:
         nullable=False,
     )
 
-    # Flags especiais
-    # Professor Diretor de Turma
-    is_tutor: Mapped[bool] = mapped_column(
-        Boolean, default=False, nullable=False
-    )
-    is_active: Mapped[bool] = mapped_column(
-        Boolean, default=True, nullable=False
-    )
-    # Força troca de senha no primeiro login
-    # (True para usuários importados via CSV)
+    # Professor Diretor de Turma — concede permissões extras ao TEACHER
+    is_tutor: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    # Força o usuário a trocar a senha no primeiro login
+    # (definido como True em importações via CSV)
     must_change_password: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False
     )
 
-    # Sala (obrigatório para alunos e professores DT, NULL para os demais)
+    # ── Turma ──────────────────────────────────────────────────────── #
+    # Obrigatório para alunos e professores DT; NULL para os demais.
+    # SET NULL ao deletar a turma preserva o usuário sem turma vinculada.
     classroom_id: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey('classrooms.id', ondelete='SET NULL'),
@@ -117,7 +133,7 @@ class User:
         nullable=True,
     )
 
-    # Metadados
+    # ── Metadados ──────────────────────────────────────────────────── #
     created_at: Mapped[datetime] = mapped_column(
         init=False, server_default=func.now()
     )
@@ -125,13 +141,15 @@ class User:
         init=False, server_default=func.now(), onupdate=func.now()
     )
 
-    # ------------------------------------------------------------------ #
-    # Relacionamentos (não participam do __init__ gerado pelo dataclass)  #
-    # ------------------------------------------------------------------ #
+    # ── Relacionamentos ────────────────────────────────────────────── #
+    # Carregamento lazy='noload' (nenhuma query automática).
+    # Carregue explicitamente com selectin_load() quando precisar acessar.
+    #
+    # Usamos selectin (2 queries separadas) em vez de join porque:
+    # - Evita produto cartesiano em relacionamentos auto-referentes
+    # - Funciona igualmente bem em SQLite e PostgreSQL
 
     # Responsável → lista de alunos sob sua responsabilidade
-    # Carregamento: selectin (2 queries — evita produto cartesiano em joins
-    # auto-referentes e funciona igualmente bem no SQLite e PostgreSQL)
     students: Mapped[list['User']] = relationship(
         'User',
         secondary='guardian_student',
@@ -144,7 +162,6 @@ class User:
     )
 
     # Aluno → lista de responsáveis
-    # Carregamento: selectin load (2 queries, evita produto cartesiano em M×N)
     guardians: Mapped[list['User']] = relationship(
         'User',
         secondary='guardian_student',
@@ -157,7 +174,7 @@ class User:
         overlaps='students',
     )
 
-    # Sala (objeto, não só FK)
+    # Sala associada ao usuário (objeto completo, não só o ID)
     classroom: Mapped['Classroom | None'] = relationship(
         'Classroom',
         lazy='noload',

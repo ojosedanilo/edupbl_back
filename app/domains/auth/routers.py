@@ -1,3 +1,13 @@
+"""
+Rotas de autenticação: login, logout, refresh e perfil do usuário logado.
+
+Estratégia de tokens:
+  - access_token  → JWT de curta duração, enviado no header Authorization
+  - refresh_token → JWT de longa duração, armazenado em cookie HttpOnly
+                    com path restrito a /auth/refresh_token para minimizar
+                    a superfície de exposição
+"""
+
 from http import HTTPStatus
 from typing import Annotated
 
@@ -22,50 +32,43 @@ from app.shared.security import (
     verify_password,
 )
 
-ESCOPO_ACCESS_TOKEN = '/auth/token'
-ESCOPO_REFRESH_TOKEN = '/auth/refresh_token'
+# Path do cookie de refresh — deve bater exatamente em set/delete
+REFRESH_COOKIE_PATH = '/auth/refresh_token'
 
 router = APIRouter(prefix='/auth', tags=['auth'])
 
-OAuth2Form = Annotated[OAuth2PasswordRequestForm, Depends()]
-Session = Annotated[AsyncSession, Depends(get_session)]
+# Aliases de dependency para reduzir repetição nas assinaturas
+OAuth2Form  = Annotated[OAuth2PasswordRequestForm, Depends()]
+Session     = Annotated[AsyncSession, Depends(get_session)]
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
-@router.post('/token', response_model=Token)
-async def login_for_access_token(
-    form_data: OAuth2Form, session: Session, response: Response
-):
-    user = await session.scalar(
-        select(User).where(User.email == form_data.username)
-    )
+def _set_refresh_cookie(response: Response, token: str) -> None:
+    """
+    Grava o refresh_token como cookie HttpOnly restrito a REFRESH_COOKIE_PATH.
 
-    if not user:
-        raise HTTPException(
-            status_code=HTTPStatus.UNAUTHORIZED,
-            detail='Incorrect email or password',
-        )
-
-    if not verify_password(form_data.password, user.password):
-        raise HTTPException(
-            status_code=HTTPStatus.UNAUTHORIZED,
-            detail='Incorrect email or password',
-        )
-
-    access_token = create_access_token(data={'sub': user.email})
-    refresh_token = create_refresh_token(data={'sub': user.email})
-
-    # Armazena o refresh token no cookie com
-    # path restrito ao endpoint de refresh
+    O path restrito garante que o browser só envie o cookie nas chamadas
+    a /auth/refresh_token, reduzindo a exposição em outras rotas.
+    """
     response.set_cookie(
         'refresh_token',
-        refresh_token,
+        token,
         httponly=True,
         secure=settings.COOKIE_SECURE,
         samesite=settings.COOKIE_SAME_SITE,
-        path=ESCOPO_REFRESH_TOKEN,
+        path=REFRESH_COOKIE_PATH,
         max_age=settings.REFRESH_TOKEN_EXPIRE_MINUTES * 60,
     )
+
+
+def _build_token_response(user: User, response: Response) -> dict:
+    """
+    Cria access + refresh tokens, grava o refresh no cookie e retorna
+    o dicionário que será serializado como Token pelo endpoint.
+    """
+    access_token  = create_access_token(data={'sub': user.email})
+    refresh_token = create_refresh_token(data={'sub': user.email})
+    _set_refresh_cookie(response, refresh_token)
 
     return {
         'access_token': access_token,
@@ -74,12 +77,50 @@ async def login_for_access_token(
     }
 
 
+# --------------------------------------------------------------------------- #
+# POST /auth/token — Login                                                    #
+# --------------------------------------------------------------------------- #
+
+@router.post('/token', response_model=Token)
+async def login_for_access_token(
+    form_data: OAuth2Form, session: Session, response: Response
+):
+    """
+    Autentica o usuário com e-mail e senha.
+
+    Retorna o access_token no corpo e define o refresh_token como cookie.
+    Intencionalmente usa a mesma mensagem de erro para e-mail e senha inválidos,
+    evitando enumerar usuários cadastrados.
+    """
+    user = await session.scalar(
+        select(User).where(User.email == form_data.username)
+    )
+
+    # Mensagem genérica para não vazar se o e-mail existe ou não
+    if not user or not verify_password(form_data.password, user.password):
+        raise HTTPException(
+            status_code=HTTPStatus.UNAUTHORIZED,
+            detail='Incorrect email or password',
+        )
+
+    return _build_token_response(user, response)
+
+
+# --------------------------------------------------------------------------- #
+# POST /auth/logout — Logout                                                  #
+# --------------------------------------------------------------------------- #
+
 @router.post('/logout')
 async def logout(response: Response):
-    # Remove o cookie de refresh token
+    """
+    Remove o cookie de refresh_token do browser.
+
+    O path e os atributos de segurança precisam ser idênticos aos usados
+    na criação — do contrário, o browser não remove o cookie.
+    """
     response.delete_cookie(
         'refresh_token',
-        path=ESCOPO_REFRESH_TOKEN,  # ← precisa bater com o path de criação
+        path=REFRESH_COOKIE_PATH,
         samesite=settings.COOKIE_SAME_SITE,
         secure=settings.COOKIE_SECURE,
         httponly=True,
@@ -87,10 +128,20 @@ async def logout(response: Response):
     return {'message': 'Logout successful'}
 
 
+# --------------------------------------------------------------------------- #
+# POST /auth/refresh_token — Renovação de tokens                             #
+# --------------------------------------------------------------------------- #
+
 @router.post('/refresh_token', response_model=Token)
 async def refresh_access_token(
     request: Request, response: Response, session: Session
 ):
+    """
+    Renova o access_token usando o refresh_token do cookie HttpOnly.
+
+    Emite um novo par de tokens (rotation), o que invalida implicitamente
+    o refresh_token anterior (o novo substitui o cookie).
+    """
     credentials_exception = HTTPException(
         status_code=HTTPStatus.UNAUTHORIZED,
         detail='Could not validate credentials',
@@ -105,14 +156,11 @@ async def refresh_access_token(
         payload = decode(
             refresh_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
         )
-        subject_email = payload.get('sub')
+        subject_email: str | None = payload.get('sub')
         if not subject_email:
             raise credentials_exception
 
-    except DecodeError:
-        raise credentials_exception
-
-    except ExpiredSignatureError:
+    except (DecodeError, ExpiredSignatureError):
         raise credentials_exception
 
     user = await session.scalar(
@@ -121,38 +169,30 @@ async def refresh_access_token(
     if not user:
         raise credentials_exception
 
-    new_access_token = create_access_token(data={'sub': user.email})
-    new_refresh_token = create_refresh_token(data={'sub': user.email})
+    return _build_token_response(user, response)
 
-    # Atualiza o cookie do refresh token com o novo token e a nova expiração
-    response.set_cookie(
-        'refresh_token',
-        new_refresh_token,
-        httponly=True,
-        secure=settings.COOKIE_SECURE,
-        samesite=settings.COOKIE_SAME_SITE,
-        path=ESCOPO_REFRESH_TOKEN,
-        max_age=settings.REFRESH_TOKEN_EXPIRE_MINUTES * 60,
-    )
 
-    return {
-        'access_token': new_access_token,
-        'token_type': 'bearer',
-        'must_change_password': user.must_change_password,
-    }
-
+# --------------------------------------------------------------------------- #
+# GET /auth/me — Perfil do usuário logado                                     #
+# --------------------------------------------------------------------------- #
 
 @router.get('/me', response_model=UserPublic)
 async def get_me(current_user: CurrentUser):
+    """Retorna os dados públicos do usuário autenticado."""
     return current_user
 
 
 @router.get('/me/permissions', response_model=UserWithPermissions)
 async def get_me_permissions(current_user: CurrentUser):
+    """Retorna os dados públicos + conjunto de permissões do usuário autenticado."""
     permissions = get_user_permissions(current_user)
     base = UserPublic.model_validate(current_user)
     return UserWithPermissions(**base.model_dump(), permissions=permissions)
 
+
+# --------------------------------------------------------------------------- #
+# GET /auth/admin — Rota de teste de role                                     #
+# --------------------------------------------------------------------------- #
 
 @router.get('/admin', response_model=UserPublic)
 async def get_admin(
@@ -160,4 +200,5 @@ async def get_admin(
         role_required([UserRole.COORDINATOR, UserRole.ADMIN])
     ),
 ):
+    """Rota de exemplo para verificar acesso restrito a Coordenador/Admin."""
     return coordinator

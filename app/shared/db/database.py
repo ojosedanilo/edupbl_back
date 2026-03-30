@@ -1,3 +1,7 @@
+"""
+Configuração do banco de dados: engine, session factory e dependency.
+"""
+
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -6,18 +10,19 @@ from sqlalchemy.ext.asyncio import (
 
 from app.core.settings import settings
 
-# URL do banco de dados
-DATABASE_URL = settings.DATABASE_URL
+# Engine assíncrono — a conexão real só é aberta na primeira operação
+engine = create_async_engine(settings.DATABASE_URL, future=True)
 
-# Cria o engine do SQLAlchemy (nao conecta ate a primeira operacao)
-engine = create_async_engine(DATABASE_URL, future=True)
-# Cria a sessao local do SQLAlchemy
+# Factory de sessões — expire_on_commit=False evita lazy-load após commit
 SessionLocal = async_sessionmaker(
-    autocommit=False, autoflush=False, bind=engine, expire_on_commit=False
+    autocommit=False,
+    autoflush=False,
+    bind=engine,
+    expire_on_commit=False,
 )
 
 
-# Dependency para obter a sessao do banco de dados
 async def get_session():
+    """FastAPI dependency que fornece uma sessão async por requisição."""
     async with AsyncSession(engine, expire_on_commit=False) as session:
         yield session
