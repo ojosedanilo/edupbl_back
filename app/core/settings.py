@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from pydantic import computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Acha a raiz do projeto automaticamente
@@ -18,9 +19,27 @@ class Settings(BaseSettings):
     # !!! Mudar para 'production' na produção
     ENVIRONMENT: str = 'development'  # 'development' ou 'production'
     API_URL: str = 'http://localhost:8000/'
-    COOKIE_SAME_SITE: str = 'none'
-    #
-    COOKIE_SECURE: bool = True if ENVIRONMENT == 'production' else False
+
+    # Campo computado (não declarar como atributo!)
+    @computed_field
+    @property
+    def COOKIE_SAME_SITE(self) -> str:
+        return 'none'
+        """
+        if self.ENVIRONMENT == 'production':
+            return 'none'
+        else:
+            return 'lax'
+        """
+
+    # Campo computado (não declarar como atributo!)
+    @computed_field
+    @property
+    def COOKIE_SECURE(self) -> bool:
+        return True
+        """
+        return self.ENVIRONMENT == 'production'
+        """
 
     # ----- Autenticação -----
     SECRET_KEY: str = 'test-secret-key-not-for-production'
