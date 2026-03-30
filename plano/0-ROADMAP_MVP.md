@@ -4,343 +4,178 @@
 
 ---
 
-## ✅ **O QUE JÁ ESTÁ PRONTO**
+## ✅ O QUE JÁ ESTÁ PRONTO
 
-### **1. Infraestrutura (100%)** ✅
+### 1. Infraestrutura (100%) ✅
+- [x] Estrutura de pastas modular por domínio
+- [x] FastAPI configurado com lifespan
+- [x] PostgreSQL + SQLAlchemy async
+- [x] Alembic (migrations)
+- [x] Scripts de setup (`init_db.py`, `seed_db.py`)
+- [x] Testes configurados (pytest)
 
-- [X] Estrutura de pastas modular
-- [X] FastAPI configurado
-- [X] PostgreSQL + SQLAlchemy
-- [X] Alembic (migrations)
-- [X] Scripts de setup (`init_db.py`, `seed_db.py`)
-- [X] Testes configurados (pytest)
+### 2. Autenticação (100%) ✅
+- [x] JWT com access token + refresh token
+- [x] Login / Logout
+- [x] Refresh token em cookie HttpOnly (path restrito)
+- [x] `GET /auth/me` e `GET /auth/me/permissions`
+- [x] Testes completos
 
-### **2. Autenticação (100%)** ✅
+### 3. Sistema RBAC (100%) ✅
+- [x] 6 roles: STUDENT, GUARDIAN, TEACHER, COORDINATOR, PORTER, ADMIN
+- [x] 30+ permissões mapeadas em `SystemPermissions`
+- [x] Flag `is_tutor` para Professor Diretor de Turma
+- [x] `PermissionChecker` e `role_required` como FastAPI dependencies
+- [x] Helpers `get_user_permissions`, `user_has_permission`, etc.
+- [x] Testes abrangentes
 
-- [X] JWT com access token + refresh token
-- [X] Login/Logout
-- [X] Refresh token em cookie HttpOnly
-- [X] Endpoint `/auth/me`
-- [X] Endpoint `/auth/me/permissions`
-- [X] Testes completos
+### 4. CRUD de Usuários (100%) ✅
+- [x] Create, Read, Update, Delete
+- [x] Listagem com paginação (offset/limit)
+- [x] Troca de senha com confirmação da senha atual
+- [x] Proteção por permissões
+- [x] Testes completos
 
-### **3. Sistema RBAC (100%)** ✅
-
-- [X] 6 roles definidos (STUDENT, GUARDIAN, TEACHER, COORDINATOR, PORTER, ADMIN)
-- [X] 30+ permissões mapeadas
-- [X] Flag `is_tutor` para Professor DT
-- [X] Decorators FastAPI prontos (`permission_required`, `role_required`)
-- [X] Helpers de verificação (`user_has_permission`)
-- [X] Testes abrangentes (501 linhas)
-
-### **4. CRUD de Usuários (100%)** ✅
-
-- [X] Create, Read, Update, Delete
-- [X] Listagem com paginação
-- [X] Proteção por permissões
-- [X] Testes completos
-
----
-
-## 🚧 **O QUE FALTA PARA O MVP FUNCIONAL**
-
-### **Feature 1: Occurrences (Ocorrências)** ⏳ EM ANDAMENTO
-
-**Status:** Você está implementando agora
-
-**Escopo mínimo:**
-
-- [X] Criar domínio `occurrences/`
-- [ ] Model + Schemas + Routers
-- [ ] Endpoints:
-  - [ ] POST `/occurrences` (professor cria)
-  - [ ] GET `/occurrences` (coordenação vê todas)
-  - [ ] GET `/occurrences/me` (aluno/professor vê suas)
-  - [ ] GET `/occurrences/{id}` (detalhes)
-  - [ ] PUT `/occurrences/{id}` (editar)
-  - [ ] DELETE `/occurrences/{id}` (deletar)
-- [ ] Migration
-- [ ] Testes
-- [ ] (Opcional) Notificação por e-mail ao responsável
-
-**Tempo estimado:** 1-2 dias
+### 5. Ocorrências (100%) ✅
+- [x] Model + Schemas + Routers
+- [x] POST `/occurrences` (professor cria)
+- [x] GET `/occurrences` (coordenação vê todas)
+- [x] GET `/occurrences/me` (aluno/professor vê as suas)
+- [x] GET `/occurrences/{id}` (detalhe)
+- [x] PUT `/occurrences/{id}` (editar)
+- [x] DELETE `/occurrences/{id}` (deletar)
+- [x] Migration
+- [x] Testes
 
 ---
 
-### **Feature 2: Delays (Atrasos)** 🔜 PRÓXIMO
+## 🚧 O QUE FALTA PARA O MVP FUNCIONAL
+
+### Feature 1: Delays (Atrasos) 🔜 PRÓXIMO
 
 **Escopo mínimo:**
-
-- [ ] Criar domínio `delays/`
+- [ ] Criar domínio `app/domains/delays/`
 - [ ] Model com status (PENDING, APPROVED, REJECTED)
 - [ ] Endpoints:
-  - [ ] POST `/delays` (porteiro registra)
-  - [ ] GET `/delays/pending` (coordenação vê pendentes)
-  - [ ] PATCH `/delays/{id}/approve` (coordenação aprova)
-  - [ ] PATCH `/delays/{id}/reject` (coordenação rejeita)
-  - [ ] GET `/delays/me` (aluno vê seus atrasos)
-- [ ] Horário fixo de entrada (7:30) — sem tabela de horários
+  - [ ] `POST /delays` — porteiro registra atraso
+  - [ ] `GET /delays` — coordenação vê todos os atrasos
+  - [ ] `GET /delays/pending` — coordenação vê pendentes
+  - [ ] `PATCH /delays/{id}/approve` — coordenação aprova
+  - [ ] `PATCH /delays/{id}/reject` — coordenação rejeita
+  - [ ] `GET /delays/me` — aluno vê seus próprios atrasos
 - [ ] Migration
 - [ ] Testes
-- [ ] (Opcional) Notificação por e-mail
+- [ ] Consulte `plano/3-FEATURE_DELAYS.md` para o guia completo
 
-**Tempo estimado:** 2-3 dias
+**Tempo estimado:** 2–3 dias
 
 ---
 
-### **Feature 3: Importação de Usuários Reais** 📋 ESSENCIAL
+### Feature 2: Importação de Usuários Reais 📋 ESSENCIAL
 
 **Escopo:**
-
-- [ ] Criar `scripts/import_real_users.py`
-- [ ] Ler CSVs de `data/` (professores, alunos, coordenadores)
-- [ ] Validar dados
-- [ ] Criar usuários no banco
-- [ ] Gerar senhas temporárias
-- [ ] (Opcional) Enviar e-mail com senha
+- [ ] `scripts/import_real_users.py`
+- [ ] Lê CSVs de `data/` (professores, alunos, coordenadores)
+- [ ] Valida dados e cria usuários no banco
+- [ ] Gera senhas temporárias + seta `must_change_password=True`
+- [ ] Consulte `plano/2-SEGURANCA_DADOS_REAIS.md` para o guia
 
 **Tempo estimado:** 1 dia
 
 ---
 
-### **Feature 4: Notificações Básicas** 📧 DESEJÁVEL
+### Feature 3: Notificações Básicas 📧 DESEJÁVEL
 
-**Escopo mínimo (E-mail):**
+**Escopo mínimo (e-mail):**
+- [ ] Configurar SMTP nas settings
+- [ ] `app/shared/notifications/email.py`
+- [ ] Templates simples de e-mail
+- [ ] Notificar responsável ao criar ocorrência
+- [ ] Notificar responsável e professor ao aprovar/rejeitar atraso
+- [ ] Notificar coordenação sobre novo atraso pendente
 
-- [ ] Configurar SMTP
-- [ ] Criar `app/shared/notifications/email.py`
-- [ ] Templates de e-mail simples
-- [ ] Notificar responsável sobre ocorrência
-- [ ] Notificar responsável sobre atraso aprovado/rejeitado
-- [ ] Notificar coordenação sobre novo atraso
+**Nota:** WhatsApp pode vir depois — e-mail já resolve para MVP.
+**Consulte:** `plano/4-INTEGRACAO_WHATSAPP.md` (seção E-mail)
 
-**Tempo estimado:** 1-2 dias
-
-**Nota:** WhatsApp pode vir depois, e-mail já resolve para MVP
-
----
-
-## 🎯 **DEFINIÇÃO DE "SISTEMA FUNCIONAL"**
-
-O sistema estará **funcionalmente completo** para teste piloto quando tiver:
-
-### **Funcionalidades Essenciais:**
-
-1. ✅ Login de diferentes usuários (aluno, professor, coordenador, porteiro)
-2. ✅ Permissões funcionando (cada um vê só o que pode)
-3. ✅ Professor pode registrar ocorrências
-4. ✅ Coordenação pode ver todas as ocorrências
-5. ✅ Alunos/Responsáveis podem ver suas ocorrências
-6. ✅ Porteiro pode registrar atrasos
-7. ✅ Coordenação pode aprovar/rejeitar atrasos
-8. ✅ Responsáveis são notificados (e-mail mínimo)
-
-### **Usuários de Teste:**
-
-- ✅ Admin
-- ✅ Coordenador
-- ✅ Professor
-- ✅ Professor DT
-- ✅ Porteiro
-- ✅ Aluno
-- ✅ Responsável
-
-### **Dados Reais Importados:**
-
-- ✅ Professores da escola
-- ✅ Coordenadores
-- ✅ Diretora
-- ✅ Alunos das 2 turmas piloto
-- ✅ Responsáveis vinculados aos alunos
+**Tempo estimado:** 1–2 dias
 
 ---
 
-## 📅 **CRONOGRAMA ESTIMADO**
+## 🎯 Critério de "Sistema Funcional"
 
-| Semana       | Tarefas                                          | Status |
-| ------------ | ------------------------------------------------ | ------ |
-| **1**  | Occurrences (backend completo)                   | ⏳     |
-| **2**  | Delays (backend completo)                        | 🔜     |
-| **3**  | Importação de usuários reais + Notificações | 🔜     |
-| **4**  | Testes, ajustes, deploy                          | 🔜     |
-| **5**  | Teste piloto com 2 turmas                        | 🔜     |
-| **6+** | Feedback, ajustes, novas features                | 🔜     |
+O sistema estará pronto para teste piloto quando este fluxo funcionar de ponta a ponta:
 
-**Total até MVP funcional:** ~3-4 semanas
-
----
-
-## 🚀 **DEPOIS DO MVP: Features Complementares**
-
-Após validar com usuários reais, você pode adicionar:
-
-### **Curto Prazo (1-2 meses):**
-
-- [ ] Atestados (aluno/responsável submete → DT valida → coordenação aprova)
-- [ ] Notificações WhatsApp (migrar de e-mail)
-- [ ] Dashboard com estatísticas
-- [ ] Horários de aula (tabela `class_schedules`)
-- [ ] Filtros avançados (datas, turmas, tipos)
-
-### **Médio Prazo (3-6 meses):**
-
-- [ ] Gerenciamento de espaços (biblioteca, auditório)
-- [ ] Reserva de mídias (projetores, notebooks)
-- [ ] Planos de aula para professores
-- [ ] Banco de questões
-- [ ] Gerador de atividades
-
-### **Longo Prazo (6+ meses):**
-
-- [ ] Projetos da escola (Revista Rabisco, Jornada Antirracista)
-- [ ] Sistema de sugestões (com moderação por IA)
-- [ ] Relatórios avançados (frequência, desempenho)
-- [ ] Integração com outros sistemas da escola
-- [ ] App mobile (React Native)
+1. Professor faz login → registra ocorrência do aluno João
+2. Responsável do João faz login → vê a ocorrência
+3. Responsável recebe e-mail de notificação
+4. Porteiro faz login → registra atraso do João
+5. Coordenação faz login → aprova o atraso
+6. Professor vê que João foi autorizado a entrar
+7. Responsável recebe e-mail sobre o atraso
 
 ---
 
-## 🎓 **RESPOSTA DIRETA: "O SISTEMA ESTÁ FUNCIONAL?"**
+## 📅 Cronograma Estimado
 
-### **Status Atual:**
+| Semana | Tarefas                                        | Status |
+|--------|------------------------------------------------|--------|
+| **1**  | ✅ Occurrences (concluído)                     | ✅     |
+| **2**  | Delays (backend completo + testes)             | 🔜     |
+| **3**  | Importação de usuários reais + Notificações    | 🔜     |
+| **4**  | Testes, ajustes, deploy                        | 🔜     |
+| **5**  | Teste piloto com 2 turmas                      | 🔜     |
+| **6+** | Feedback, ajustes, novas features              | 🔜     |
 
-❌ **Não ainda** — Falta Occurrences + Delays + Usuários Reais
-
-### **Quando estará funcional:**
-
-✅ **Em ~3-4 semanas** se você seguir o cronograma acima
-
-### **O que define "funcional":**
-
-✅ Professor registra ocorrência → Responsável vê e é notificado
-✅ Porteiro registra atraso → Coordenação aprova → Responsável é notificado
-✅ Usuários reais conseguem fazer login e usar o sistema
-
-**Após isso, o sistema está pronto para teste piloto!**
+**Total até MVP funcional:** ~2–3 semanas restantes
 
 ---
 
-## 📊 **PROGRESSO ATUAL**
+## 📊 Progresso Atual
 
 ```
-███████░░░░░░░░░░░░░░░░░ 30% — MVP Funcional
+████████████░░░░░░░░░░░░ 50% — MVP Funcional
 
 ✅ Infraestrutura
 ✅ Auth
 ✅ RBAC
 ✅ Users CRUD
-⏳ Occurrences (em andamento)
+✅ Occurrences
 🔜 Delays
-🔜 Import usuários reais
+🔜 Importação de usuários reais
 🔜 Notificações básicas
 ```
 
 ---
 
-## 🎯 **FOCO TOTAL: MVP Mínimo Viável**
+## 🚀 Depois do MVP: Features Complementares
 
-**Não adicione nada além de:**
+### Curto Prazo (1–2 meses)
+- [ ] Atestados (aluno/responsável submete → DT valida → coordenação aprova)
+- [ ] Notificações WhatsApp (migrar de e-mail)
+- [ ] Dashboard com estatísticas básicas
+- [ ] Filtros avançados (datas, turmas, tipos)
 
-1. Occurrences
-2. Delays
-3. Import de usuários
-4. Notificações básicas (e-mail)
+### Médio Prazo (3–6 meses)
+- [ ] Gerenciamento de espaços (biblioteca, auditório)
+- [ ] Reserva de mídias (projetores, notebooks)
+- [ ] Horários de aula (tabela `class_schedules`)
+- [ ] Banco de questões e planos de aula
 
-**Deixe para depois:**
-
-- WhatsApp (use e-mail primeiro)
-- Horários de aula (use horário fixo)
-- Dashboard (use listagens simples)
-- Atestados (segunda fase)
-- Espaços/Mídias (segunda fase)
-
-**Por quê?**
-
-- Validar com usuários reais o mais rápido possível
-- Descobrir o que realmente importa vs. o que é "nice to have"
-- Evitar desperdício de tempo em features que ninguém vai usar
+### Longo Prazo (6+ meses)
+- [ ] Sistema de sugestões com moderação
+- [ ] Relatórios avançados (frequência, desempenho)
+- [ ] App mobile (React Native)
+- [ ] Integração com outros sistemas da escola
 
 ---
 
-## 🔥 **PRIORIZAÇÃO: O QUE FAZER AGORA**
+## 💡 Lembre-se
 
-### **Esta semana:**
+**Sistema funcional ≠ Sistema perfeito.**
 
-1. ✅ Terminar Occurrences (você está fazendo)
-2. ✅ Testar Occurrences com usuários de teste
-3. ✅ Corrigir bugs encontrados
+Foco agora:
+1. ✅ Delays
+2. ✅ Importação de usuários
+3. ✅ Notificações básicas (e-mail)
 
-### **Próxima semana:**
-
-1. ✅ Implementar Delays
-2. ✅ Testar Delays
-3. ✅ Integrar notificações por e-mail
-
-### **Terceira semana:**
-
-1. ✅ Criar script de importação de usuários
-2. ✅ Importar dados reais
-3. ✅ Testar com dados reais internamente
-
-### **Quarta semana:**
-
-1. ✅ Deploy em servidor (Heroku, Railway, VPS)
-2. ✅ Treinar equipe (coordenação, porteiro)
-3. ✅ Iniciar teste piloto com 2 turmas
-
----
-
-## 💡 **DICA FINAL**
-
-**Sistema funcional ≠ Sistema perfeito**
-
-Seu objetivo agora é:
-
-- ✅ Resolver o problema real (ocorrências + atrasos)
-- ✅ Funcionar bem o suficiente para teste
-- ✅ Coletar feedback de usuários reais
-
-**Depois** você melhora:
-
-- Interface mais bonita
-- WhatsApp ao invés de e-mail
-- Dashboards com gráficos
-- Features extras
-
-**Lembre-se:** É melhor ter um sistema simples funcionando em 1 mês do que um sistema perfeito que nunca fica pronto.
-
----
-
-## ✅ **PRÓXIMOS PASSOS IMEDIATOS**
-
-1. **Termine Occurrences** (você está fazendo agora)
-2. **Teste manualmente** com usuários fake
-3. **Siga para Delays** (use o guia `FEATURE_DELAYS.md`)
-4. **Crie script de importação** (use o guia `SEGURANCA_DADOS_REAIS.md`)
-5. **Adicione notificações básicas** (use o guia `INTEGRACAO_WHATSAPP.md` — seção E-mail)
-
-**Em 3-4 semanas você terá um MVP funcional rodando!** 🚀
-
----
-
-## 📞 **QUANDO CONSIDERAR "FUNCIONAL"**
-
-### **Critério de Aceitação:**
-
-Faça o seguinte teste:
-
-1. Professor faz login → Registra ocorrência do aluno João
-2. Responsável do João faz login → Vê a ocorrência
-3. Responsável recebe e-mail notificando
-4. Porteiro faz login → Registra atraso do João
-5. Coordenação faz login → Aprova o atraso
-6. Professor faz login → Vê que João foi autorizado a entrar
-7. Responsável recebe e-mail sobre o atraso
-
-**Se esse fluxo funcionar de ponta a ponta = SISTEMA FUNCIONAL! ✅**
-
-Aí você já pode começar o teste piloto com as 2 turmas reais.
-
----
-
-**Boa sorte! Você está no caminho certo. Foco no MVP, valide com usuários, depois expande!** 🎯
+Deixe para depois: WhatsApp, dashboards, horários, atestados, espaços.

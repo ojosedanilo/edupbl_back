@@ -1,12 +1,14 @@
 # 🕐 Feature: Delays (Atrasos) — Guia de Implementação
 
-> Sistema de registro e aprovação de atrasos de alunos, envolvendo porteiro, coordenação, professor e notificação aos pais.
+> Sistema de registro e aprovação de atrasos de alunos, envolvendo porteiro,
+> coordenação, professor DT e notificação aos responsáveis.
 
 ---
 
 ## 🎯 Objetivo
 
-Registrar quando um aluno chega atrasado, controlar a aprovação da entrada, notificar as partes envolvidas e integrar com o registro de frequência do professor.
+Registrar quando um aluno chega atrasado, controlar a aprovação da entrada
+e notificar as partes envolvidas (coordenação, professor DT, responsável).
 
 ---
 
@@ -17,305 +19,217 @@ Registrar quando um aluno chega atrasado, controlar a aprovação da entrada, no
    ↓
 2. PORTEIRO registra o atraso no sistema
    ↓
-3. Sistema notifica COORDENAÇÃO
+3. Sistema notifica COORDENAÇÃO (pendente)
    ↓
-4. COORDENAÇÃO aprova/rejeita a entrada
+4. COORDENAÇÃO aprova ou rejeita a entrada
    ↓
    ├─ Se APROVADO:
-   │   ├─ Sistema notifica PROFESSOR da turma
-   │   ├─ Sistema notifica RESPONSÁVEL do aluno
-   │   └─ Aluno pode entrar
+   │   ├─ Notifica PROFESSOR DT da turma
+   │   ├─ Notifica RESPONSÁVEL do aluno
+   │   └─ Aluno entra
    │
    └─ Se REJEITADO:
-       ├─ Sistema notifica RESPONSÁVEL do aluno
-       └─ Aluno não entra (volta pra casa)
+       ├─ Notifica RESPONSÁVEL do aluno
+       └─ Aluno não entra
 ```
 
 ---
 
 ## 🗂️ Modelo de Dados
 
-### **Tabela: `delays`**
+### Tabela: `delays`
 
-**Campos básicos:**
-- `id` (PK)
-- `student_id` (FK → users) — aluno que atrasou
-- `registered_by_id` (FK → users) — quem registrou (porteiro)
-- `approved_by_id` (FK → users, nullable) — coordenador que aprovou/rejeitou
-- `delay_date` — data do atraso (YYYY-MM-DD)
-- `arrival_time` — hora que o aluno chegou (HH:MM:SS)
-- `expected_time` — hora esperada (HH:MM:SS) — pode vir de uma tabela de horários
-- `delay_minutes` — diferença calculada automaticamente
-- `status` — ENUM: `PENDING`, `APPROVED`, `REJECTED`
-- `reason` — motivo do atraso (opcional, texto livre)
-- `rejection_reason` — motivo da rejeição (se aplicável)
-- `created_at`, `updated_at`
+| Campo              | Tipo           | Observação                                      |
+|--------------------|----------------|-------------------------------------------------|
+| `id`               | PK             |                                                 |
+| `student_id`       | FK → users     | CASCADE DELETE                                  |
+| `registered_by_id` | FK → users     | SET NULL se porteiro for deletado               |
+| `approved_by_id`   | FK → users     | Nullable — preenchido só ao aprovar/rejeitar    |
+| `delay_date`       | Date           | Data do atraso (YYYY-MM-DD)                     |
+| `arrival_time`     | Time           | Hora que o aluno chegou (HH:MM:SS)              |
+| `expected_time`    | Time           | Hora esperada de chegada (fixo: 07:30 no MVP)   |
+| `delay_minutes`    | Integer        | Calculado: (arrival_time - expected_time)       |
+| `status`           | Enum           | PENDING / APPROVED / REJECTED                   |
+| `reason`           | Text, nullable | Motivo informado pelo aluno/porteiro             |
+| `rejection_reason` | Text, nullable | Motivo da rejeição (preenchido pela coordenação)|
+| `created_at`       | Datetime       | Auto                                            |
+| `updated_at`       | Datetime       | Auto                                            |
 
-**Status possíveis:**
-- `PENDING` — aguardando decisão da coordenação
-- `APPROVED` — coordenação aprovou a entrada
-- `REJECTED` — coordenação rejeitou (aluno não entra)
-
----
-
-## 🔐 Permissões Necessárias (RBAC)
-
-Você já definiu as permissões em `permissions.py`:
-
+### Enum `DelayStatus`
 ```python
-DELAYS_CREATE       # Porteiro registra
-DELAYS_APPROVE      # Coordenação aprova
-DELAYS_REJECT       # Coordenação rejeita (pode ser mesma que APPROVE)
-DELAYS_VIEW_ALL     # Coordenação/Admin vê todos
-DELAYS_VIEW_OWN     # Aluno vê seus próprios
-DELAYS_VIEW_CHILD   # Responsável vê do filho
+class DelayStatus(str, Enum):
+    PENDING  = 'pending'   # Aguardando decisão
+    APPROVED = 'approved'  # Entrada autorizada
+    REJECTED = 'rejected'  # Entrada negada
 ```
 
-**Mapeamento:**
-- **Porteiro:** `DELAYS_CREATE`, `DELAYS_VIEW_ALL`
-- **Coordenador:** `DELAYS_APPROVE`, `DELAYS_VIEW_ALL`
-- **Aluno:** `DELAYS_VIEW_OWN`
-- **Responsável:** `DELAYS_VIEW_CHILD`
-- **Professor:** Pode ter `DELAYS_VIEW_OWN_CLASS` (ver da turma dele)
+---
+
+## 🔐 Permissões RBAC
+
+Todas as permissões já estão definidas em `app/shared/rbac/permissions.py`:
+
+| Permissão              | Quem tem              | Para quê                             |
+|------------------------|-----------------------|--------------------------------------|
+| `DELAYS_CREATE`        | Porteiro              | Registrar atraso                     |
+| `DELAYS_APPROVE`       | Coordenador           | Aprovar entrada                      |
+| `DELAYS_REJECT`        | Coordenador           | Rejeitar entrada                     |
+| `DELAYS_VIEW_ALL`      | Coordenador, Admin    | Ver todos os atrasos                 |
+| `DELAYS_VIEW_OWN`      | Aluno                 | Ver seus próprios atrasos            |
+| `DELAYS_VIEW_CHILD`    | Responsável           | Ver atrasos do(s) filho(s)           |
+| `DELAYS_VIEW_OWN_CLASS`| Professor DT          | Ver atrasos da sua turma             |
 
 ---
 
-## 📋 Passo a Passo de Implementação
+## 📋 Estrutura de Arquivos
 
-### **Fase 1: Modelo e Schemas**
-
-#### **Passo 1.1: Criar estrutura**
 ```
 app/domains/delays/
 ├── __init__.py
+├── models.py    ← Model Delay + Enum DelayStatus
+├── schemas.py   ← DelayCreate, DelayApprove, DelayPublic, DelayList
+└── routers.py   ← Endpoints com RBAC
+tests/
+└── test_delays.py
+```
+
+---
+
+## 🛠️ Passo a Passo de Implementação
+
+### Passo 1 — Criar estrutura de pastas
+
+```
+app/domains/delays/
+├── __init__.py   (vazio)
 ├── models.py
 ├── schemas.py
 └── routers.py
 ```
 
-#### **Passo 1.2: Criar Model (`models.py`)**
-- Tabela `delays` com todos os campos listados acima
-- FKs para `users` (student, registered_by, approved_by)
+---
+
+### Passo 2 — Model (`models.py`)
+
+- Tabela `delays` com todos os campos do modelo de dados acima
 - Enum `DelayStatus` (PENDING, APPROVED, REJECTED)
-- Usar `mapper_registry` compartilhado
-
-#### **Passo 1.3: Criar Schemas (`schemas.py`)**
-
-**Schemas necessários:**
-
-1. **`DelayCreate`** — usado pelo porteiro ao registrar
-   - Campos: `student_id`, `arrival_time`, `reason` (opcional)
-   - `delay_date` pega data de hoje automaticamente
-   - `expected_time` pode ser calculado ou fixo (ex: 7:30)
-
-2. **`DelayUpdate`** — usado pela coordenação ao aprovar/rejeitar
-   - Campos: `status`, `rejection_reason` (opcional)
-   - `approved_by_id` preenchido automaticamente com usuário logado
-
-3. **`DelayPublic`** — retorno da API
-   - Todos os campos, incluindo IDs, status, timestamps
-   - `model_config = ConfigDict(from_attributes=True)`
-
-4. **`DelayList`** — wrapper de lista
-   - `delays: list[DelayPublic]`
-
-5. **`DelayWithDetails`** — versão expandida (opcional)
-   - Inclui dados do aluno, porteiro, coordenador
-   - Útil para frontend mostrar nomes ao invés de IDs
+- Use `mapper_registry` de `app/shared/db/registry.py`
+- FKs:
+  - `student_id` → `CASCADE` (atraso some se aluno for deletado)
+  - `registered_by_id` → `SET NULL` (atraso fica, porteiro pode ser deletado)
+  - `approved_by_id` → `SET NULL`
 
 ---
 
-### **Fase 2: Endpoints**
+### Passo 3 — Schemas (`schemas.py`)
 
-#### **Passo 2.1: Criar routers (`routers.py`)**
+Crie os seguintes schemas:
+
+**`DelayCreate`** — usado pelo porteiro ao registrar:
+- Campos: `student_id`, `arrival_time`, `reason` (opcional)
+- `delay_date` é preenchido automaticamente com `date.today()` no router
+- `expected_time` é fixo (07:30) no MVP — mude para buscado por turma depois
+
+**`DelayApprove`** — usado pela coordenação:
+- Campos: `rejection_reason` (opcional, usado só na rejeição)
+- O novo `status` (APPROVED ou REJECTED) vem da URL (`/approve` ou `/reject`)
+- `approved_by_id` preenchido automaticamente com `current_user.id` no router
+
+**`DelayPublic`** — retorno da API:
+- Todos os campos escalares, incluindo status e timestamps
+- `model_config = ConfigDict(from_attributes=True)`
+
+**`DelayList`** — wrapper de listagem:
+- `delays: list[DelayPublic]`
+
+---
+
+### Passo 4 — Endpoints (`routers.py`)
 
 Prefixo: `/delays`
 
-**Endpoints:**
+#### `POST /delays` — Registrar atraso
+- Permissão: `DELAYS_CREATE`
+- Body: `DelayCreate`
+- Lógica:
+  1. Verifica se `student_id` existe e é `role=STUDENT`
+  2. Impede registro duplicado no mesmo dia (mesmo `student_id + delay_date`)
+  3. Calcula `delay_minutes = (arrival_time - expected_time).seconds // 60`
+  4. Cria o registro com `status=PENDING` e `registered_by_id=current_user.id`
+  5. (Placeholder) Notifica coordenação
+- Retorna: `DelayPublic`
 
-1. **`POST /delays`** — Registrar atraso (Porteiro)
-   - Permissão: `DELAYS_CREATE`
-   - Body: `DelayCreate`
-   - Lógica:
-     - Pega `student_id` do body
-     - Pega `registered_by_id` do usuário logado
-     - Define `status = PENDING`
-     - Calcula `delay_minutes` (arrival_time - expected_time)
-     - Salva no banco
-     - **Notifica coordenação** (ver Fase 4)
-   - Retorna: `DelayPublic`
+#### `GET /delays` — Listar todos
+- Permissão: `DELAYS_VIEW_ALL`
+- Query params opcionais: `status` (filtrar por status), `date` (filtrar por data)
+- Retorna: `DelayList`
 
-2. **`GET /delays`** — Listar todos atrasos (Coordenação)
-   - Permissão: `DELAYS_VIEW_ALL`
-   - Query params: `status` (filtrar por pending/approved/rejected), `date` (filtrar por data)
-   - Retorna: `DelayList`
+#### `GET /delays/pending` — Listar pendentes
+- Permissão: `DELAYS_APPROVE`
+- Atalho: filtra `status=PENDING` automaticamente
+- Retorna: `DelayList`
 
-3. **`GET /delays/pending`** — Atrasos aguardando aprovação
-   - Permissão: `DELAYS_APPROVE`
-   - Retorna apenas atrasos com `status = PENDING`
-   - Útil para coordenação ver o que precisa decidir
+#### `GET /delays/me` — Meus atrasos (aluno)
+- Permissão: `DELAYS_VIEW_OWN`
+- Filtra por `student_id=current_user.id`
+- Retorna: `DelayList`
 
-4. **`GET /delays/me`** — Meus atrasos (Aluno)
-   - Permissão: `DELAYS_VIEW_OWN`
-   - Retorna atrasos onde `student_id = current_user.id`
-   - Aluno vê apenas seus próprios atrasos
+#### `GET /delays/{id}` — Detalhes
+- Permissão: depende do contexto — veja lógica abaixo
+- Lógica de verificação:
+  - Aluno: só pode ver se `student_id == current_user.id`
+  - Responsável: só pode ver se o aluno é filho dele (`guardian_student`)
+  - Coordenador/Admin: pode ver qualquer um
+- Retorna: `DelayPublic`
 
-5. **`GET /delays/student/{student_id}`** — Atrasos de um aluno específico
-   - Permissão: `DELAYS_VIEW_CHILD` ou `DELAYS_VIEW_ALL`
-   - Verificação extra:
-     - Se `GUARDIAN`, verifica se `student_id` é filho dele
-     - Se `COORDINATOR/ADMIN`, pode ver qualquer aluno
-   - Retorna: `DelayList`
+#### `PATCH /delays/{id}/approve` — Aprovar
+- Permissão: `DELAYS_APPROVE`
+- Lógica:
+  1. Busca o delay — 404 se não existir
+  2. Verifica que `status == PENDING` — 409 se já decidido
+  3. Atualiza: `status=APPROVED`, `approved_by_id=current_user.id`
+  4. (Placeholder) Notifica professor DT e responsável
+- Retorna: `DelayPublic`
 
-6. **`PATCH /delays/{id}/approve`** — Aprovar atraso (Coordenação)
-   - Permissão: `DELAYS_APPROVE`
-   - Body vazio ou `{"reason": "Atestado válido"}`
-   - Lógica:
-     - Atualiza `status = APPROVED`
-     - Preenche `approved_by_id = current_user.id`
-     - Salva timestamp de aprovação
-     - **Notifica professor da turma** (ver Fase 4)
-     - **Notifica responsável** (ver Fase 4)
-   - Retorna: `DelayPublic`
-
-7. **`PATCH /delays/{id}/reject`** — Rejeitar atraso (Coordenação)
-   - Permissão: `DELAYS_APPROVE`
-   - Body: `{"rejection_reason": "Motivo não justifica"}`
-   - Lógica similar ao approve, mas:
-     - Atualiza `status = REJECTED`
-     - Preenche `rejection_reason`
-     - **Notifica responsável** sobre rejeição
-   - Retorna: `DelayPublic`
-
-8. **`GET /delays/{id}`** — Detalhes de um atraso específico
-   - Permissão: depende do contexto (own/child/all)
-   - Verificação:
-     - Se aluno, só pode ver se for dele
-     - Se responsável, só se for do filho
-     - Se coordenador/admin, pode ver qualquer um
-   - Retorna: `DelayWithDetails` (com nomes)
+#### `PATCH /delays/{id}/reject` — Rejeitar
+- Permissão: `DELAYS_APPROVE` (mesma permissão de aprovar)
+- Body: `DelayApprove` (para receber `rejection_reason`)
+- Lógica similar ao approve, mas: `status=REJECTED` + `rejection_reason`
+- (Placeholder) Notifica responsável
+- Retorna: `DelayPublic`
 
 ---
 
-### **Fase 3: Lógica de Negócio**
-
-#### **Passo 3.1: Calcular minutos de atraso**
-
-No momento do registro (`POST /delays`):
-
-```
-delay_minutes = (arrival_time - expected_time).total_seconds() / 60
-```
-
-**De onde vem `expected_time`?**
-
-**Opção A: Fixo no código (MVP simples)**
-- Sempre 7:30 da manhã
-- Hardcoded: `expected_time = time(7, 30, 0)`
-
-**Opção B: Configurável por turma (melhor)**
-- Tabela `class_schedules` com horário de cada turma
-- Busca horário com base na turma do aluno
-- Mais flexível, mas precisa de feature extra
-
-**Recomendação para MVP:** Opção A (fixo). Depois evolui para B.
-
-#### **Passo 3.2: Validações**
-
-**No registro (porteiro):**
-- Verifica se `student_id` existe e é aluno
-- Verifica se `arrival_time` é realmente atrasado (> expected_time)
-- Impede registro duplicado no mesmo dia
-
-**Na aprovação/rejeição:**
-- Verifica se atraso existe
-- Verifica se ainda está `PENDING` (não pode mudar decisão depois)
-- Apenas coordenador pode aprovar/rejeitar
-
-#### **Passo 3.3: Notificações (Placeholder)**
-
-Por enquanto, crie uma função placeholder:
+### Passo 5 — Registrar router no `app/main.py`
 
 ```python
-async def notify_delay_registered(delay_id: int):
-    """TODO: Notificar coordenação sobre novo atraso"""
-    pass
-
-async def notify_delay_approved(delay_id: int):
-    """TODO: Notificar professor e responsável"""
-    pass
-
-async def notify_delay_rejected(delay_id: int):
-    """TODO: Notificar responsável"""
-    pass
+from app.domains.delays import routers as delays_routers
+app.include_router(delays_routers.router)
 ```
 
-Essas funções serão implementadas na **Fase 4** (integração WhatsApp).
-
 ---
 
-### **Fase 4: Integração com Horários de Aula (Opcional)**
+### Passo 6 — Atualizar `migrations/env.py`
 
-**Pergunta:** *"Eu provavelmente precisaria dos horários de aulas, né?"*
-
-**Resposta:** Depende do nível de automação que você quer.
-
-#### **Cenário A: MVP sem horários (mais simples)**
-- Horário fixo: `expected_time = 07:30`
-- Todas as turmas entram no mesmo horário
-- Funciona, mas limitado
-
-#### **Cenário B: Com horários de aula (mais robusto)**
-- Tabela `class_schedules`
-- Cada turma tem seu horário de entrada
-- Turmas podem ter horários diferentes
-- Suporta turno integral, vespertino, etc.
-
-**Recomendação:**
-- **MVP inicial:** Cenário A (fixo)
-- **Depois de validar:** Evoluir para Cenário B
-
-Se você quiser fazer Cenário B logo, veja o arquivo `FEATURE_SCHEDULES.md` (vou criar separado).
-
----
-
-## 🔄 Fluxo de Estados
-
-```
-[PENDING] ──approve──> [APPROVED]
-    │
-    └───reject───> [REJECTED]
+Importe o model `Delay` para que o Alembic o detecte:
+```python
+from app.domains.delays.models import Delay  # noqa: F401
 ```
 
-**Regras:**
-- Uma vez aprovado ou rejeitado, não pode mudar
-- Coordenação deve tomar decisão rapidamente
-- Sistema pode ter SLA (ex: decidir em 15 minutos)
+---
+
+### Passo 7 — Gerar e aplicar migration
+
+```bash
+alembic revision --autogenerate -m "adicionar tabela delays"
+alembic upgrade head
+```
+
+Verifique o arquivo gerado antes de aplicar.
 
 ---
 
-## 📱 Notificações (Visão Geral)
-
-**Quando notificar:**
-
-1. **Atraso registrado** → Coordenação
-   - "Novo atraso: João da Silva (3A) chegou às 08:15"
-
-2. **Atraso aprovado** → Professor + Responsável
-   - Para professor: "Atraso aprovado: João da Silva entrará na 2ª aula"
-   - Para responsável: "Seu filho foi autorizado a entrar na escola"
-
-3. **Atraso rejeitado** → Responsável
-   - "Entrada não autorizada. Favor buscar seu filho na escola"
-
-**Como notificar:**
-- Ver arquivo `INTEGRACAO_WHATSAPP.md` (próximo)
-
----
-
-## 🧪 Testes
-
-Crie `tests/test_delays.py` com:
+### Passo 8 — Testes (`tests/test_delays.py`)
 
 **Testes de permissões:**
 - Porteiro pode registrar atraso
@@ -323,103 +237,72 @@ Crie `tests/test_delays.py` com:
 - Coordenador pode aprovar/rejeitar
 - Professor não pode aprovar/rejeitar
 - Aluno só vê seus próprios atrasos
-- Responsável só vê atrasos do filho
 
 **Testes de fluxo:**
-- Registrar atraso cria com status PENDING
-- Aprovar atraso muda status para APPROVED
-- Rejeitar atraso muda status para REJECTED
-- Não pode aprovar atraso já aprovado/rejeitado
-- Cálculo de delay_minutes está correto
+- Registro cria com `status=PENDING`
+- Aprovação muda para `APPROVED` e preenche `approved_by_id`
+- Rejeição muda para `REJECTED` e preenche `rejection_reason`
+- Não pode aprovar/rejeitar um delay já decidido
+- Cálculo de `delay_minutes` está correto
 
 **Testes de validação:**
 - Não pode registrar atraso para não-aluno
 - Não pode registrar atraso duplicado no mesmo dia
-- arrival_time deve ser maior que expected_time
 
 ---
 
-## 📂 Resumo dos Arquivos
+## 💡 Simplificações para o MVP
 
-| Ação      | Arquivo                              |
-| --------- | ------------------------------------ |
-| ✅ Criar  | `app/domains/delays/__init__.py`     |
-| ✅ Criar  | `app/domains/delays/models.py`       |
-| ✅ Criar  | `app/domains/delays/schemas.py`      |
-| ✅ Criar  | `app/domains/delays/routers.py`      |
-| ✅ Criar  | `tests/test_delays.py`               |
-| ✏️ Editar | `app/app.py` (registrar router)      |
-| ✏️ Editar | `migrations/env.py` (importar model) |
-| ▶️ Gerar  | Migration com Alembic                |
+1. **Horário fixo:** `expected_time = 07:30` (hardcoded) — depois evolui para horário por turma
+2. **Notificações placeholder:** funções vazias que serão implementadas com e-mail/WhatsApp
+3. **Sem reversão:** uma vez decidido (APPROVED/REJECTED), não pode mudar
+4. **Sem histórico de decisões:** status simples sem auditoria de mudanças
 
 ---
 
-## 🎯 Ordem de Implementação
+## 🔄 Fluxo de Estados
 
-1. ✅ **Occurrences** (você está fazendo)
-2. 📋 **Delays - Fase 1 e 2** (modelo + endpoints básicos)
-3. 🧪 **Delays - Testes**
-4. 📱 **Notificações** (WhatsApp — próximo arquivo)
-5. 🔄 **Delays - Fase 3** (notificações integradas)
-6. 📅 **Horários de aula** (opcional, se precisar de flexibilidade)
+```
+[PENDING] ──approve──> [APPROVED]  (estado final)
+    │
+    └───reject───> [REJECTED]      (estado final)
+```
 
----
-
-## 💡 Simplificações para MVP
-
-Para acelerar o desenvolvimento:
-
-1. **Horário fixo:** Todos entram às 7:30
-2. **Notificações simples:** Log no console ou e-mail (antes do WhatsApp)
-3. **Sem histórico de decisões:** Coordenador decide uma vez, sem reversão
-4. **Sem workflow complexo:** PENDING → APPROVED/REJECTED (fim)
-
-Depois de validar com usuários reais, você adiciona:
-- Horários por turma
-- Notificações WhatsApp
-- Histórico de mudanças
-- Dashboard de atrasos (estatísticas)
+Uma vez aprovado ou rejeitado, o status não pode ser alterado.
 
 ---
 
-## 📊 Dashboard Sugerido (Futuro)
+## 📱 Notificações (Placeholders)
 
-Para coordenação:
-- Atrasos pendentes hoje
-- Total de atrasos por aluno (ranking)
-- Taxa de aprovação/rejeição
-- Alunos com mais de X atrasos no mês
+Crie estas funções em `app/domains/delays/routers.py` ou em `app/shared/notifications/`:
+
+```python
+async def notify_delay_registered(delay_id: int) -> None:
+    """TODO: Notificar coordenação sobre novo atraso pendente."""
+    pass
+
+async def notify_delay_approved(delay_id: int) -> None:
+    """TODO: Notificar professor DT e responsável sobre aprovação."""
+    pass
+
+async def notify_delay_rejected(delay_id: int) -> None:
+    """TODO: Notificar responsável sobre rejeição."""
+    pass
+```
+
+A implementação real virá na feature de Notificações.
+Consulte `plano/4-INTEGRACAO_WHATSAPP.md` para o plano completo.
 
 ---
 
 ## ✅ Checklist de Implementação
 
-- [ ] Criar pasta `domains/delays/`
-- [ ] Criar model `Delay` com todos os campos
-- [ ] Criar schemas (Create, Update, Public, List)
-- [ ] Criar enum `DelayStatus`
-- [ ] Criar endpoint POST `/delays` (porteiro registra)
-- [ ] Criar endpoint GET `/delays` (listar todos)
-- [ ] Criar endpoint GET `/delays/pending` (pendentes)
-- [ ] Criar endpoint GET `/delays/me` (meus atrasos)
-- [ ] Criar endpoint PATCH `/delays/{id}/approve`
-- [ ] Criar endpoint PATCH `/delays/{id}/reject`
-- [ ] Criar endpoint GET `/delays/{id}` (detalhes)
-- [ ] Registrar router no `app.py`
-- [ ] Atualizar `migrations/env.py`
+- [ ] Criar `app/domains/delays/__init__.py`
+- [ ] Criar `app/domains/delays/models.py` (Delay + DelayStatus)
+- [ ] Criar `app/domains/delays/schemas.py` (Create, Approve, Public, List)
+- [ ] Criar `app/domains/delays/routers.py` (todos os endpoints)
+- [ ] Registrar router em `app/main.py`
+- [ ] Importar model em `migrations/env.py`
 - [ ] Gerar e aplicar migration
-- [ ] Escrever testes
-- [ ] Testar fluxo completo com usuários de diferentes roles
-
----
-
-## 🚀 Próximos Passos
-
-Após concluir Delays:
-1. Ver `INTEGRACAO_WHATSAPP.md` para notificações
-2. (Opcional) Ver `FEATURE_SCHEDULES.md` para horários de aula
-3. Testar com usuários reais (piloto)
-
----
-
-**Dúvidas?** Revise cada passo antes de implementar. A feature de Delays é mais complexa que Occurrences porque envolve aprovação e notificações.
+- [ ] Criar `tests/test_delays.py`
+- [ ] Testar fluxo completo (porteiro → coordenação → aluno)

@@ -1,95 +1,77 @@
-# Implementação da Feature de Ocorrências — Back-End
+# ✅ Ocorrências — Concluído
 
-> Guia de tarefas sem código. Cada item descreve **o que** fazer e **por quê**.
-
----
-
-## Passo 1 — Criar a estrutura de pastas do domínio
-
-Crie a pasta `app/domains/occurrences/` com um arquivo `__init__.py` vazio dentro. Isso transforma a pasta em um módulo Python e mantém a consistência com os outros domínios do projeto (`users`, `auth`).
+> Esta feature está **100% implementada**. Este documento serve como referência
+> de arquitetura para as próximas features (Delays, Atestados, etc.).
 
 ---
 
-## Passo 2 — Criar o Model
+## Arquitetura implementada
 
-Crie o arquivo `models.py` dentro do novo domínio. O model representa a tabela `occurrences` no banco de dados e deve conter:
-
-- **Chave primária** `id`
-- **FK para `users`** referenciando quem *criou* a ocorrência (professor/coordenador) — se o usuário for deletado, o campo vira `NULL`
-- **FK para `users`** referenciando o *aluno* sobre quem é a ocorrência — se o aluno for deletado, a ocorrência é deletada junto (`CASCADE`)
-- **`title`** — título curto da ocorrência
-- **`description`** — descrição detalhada
-- **`created_at` e `updated_at`** — gerados automaticamente pelo banco, seguindo o padrão dos outros models
-
-Use o mesmo `mapper_registry` já existente em `users/models.py` para que o Alembic enxergue todas as tabelas de um lugar só.
+```
+app/domains/occurrences/
+├── __init__.py
+├── models.py    ← Tabela `occurrences` no banco
+├── schemas.py   ← Contratos da API (Create, Update, Public, List)
+└── routers.py   ← Endpoints FastAPI com RBAC
+```
 
 ---
 
-## Passo 3 — Criar os Schemas
+## Endpoints
 
-Crie o arquivo `schemas.py`. Os schemas definem o contrato da API — o que ela aceita e o que ela retorna. Você precisará de quatro:
-
-- **`OccurrenceCreate`** — campos obrigatórios para criar: `student_id`, `title` e `description`
-- **`OccurrenceUpdate`** — mesmos campos de conteúdo, mas todos opcionais (para permitir atualização parcial)
-- **`OccurrencePublic`** — o que a API devolve: todos os campos, incluindo `id`, `created_by_id` e os timestamps. Precisa de `model_config = ConfigDict(from_attributes=True)` para funcionar com o SQLAlchemy
-- **`OccurrenceList`** — wrapper com uma lista de `OccurrencePublic`, seguindo o padrão do `UserList`
-
----
-
-## Passo 4 — Criar os Endpoints
-
-Crie o arquivo `routers.py` com prefixo `/occurrences`. Implemente os seguintes endpoints:
-
-### `POST /occurrences`
-Cria uma nova ocorrência. O `created_by_id` deve ser preenchido automaticamente com o `id` do usuário logado — nunca vindo do corpo da requisição. Requer a permissão `OCCURRENCES_CREATE`.
-
-### `GET /occurrences`
-Lista todas as ocorrências do sistema. Requer a permissão `OCCURRENCES_VIEW_ALL` (apenas coordenadores e admins).
-
-### `GET /occurrences/me`
-Lista as ocorrências do usuário logado. O comportamento varia pela role:
-- **Aluno:** ocorrências em que ele é o aluno envolvido
-- **Professor:** ocorrências que ele criou
-
-Requer a permissão `OCCURRENCES_VIEW_OWN`.
-
-### `GET /occurrences/{id}`
-Retorna uma ocorrência específica. Requer `OCCURRENCES_VIEW_OWN`, mas com uma verificação extra: se o usuário for aluno, ele só pode ver ocorrências sobre si mesmo — caso contrário, retorna `403 Forbidden`.
-
-### `PUT /occurrences/{id}`
-Atualiza uma ocorrência existente. Requer `OCCURRENCES_EDIT`. Professores só podem editar ocorrências que eles próprios criaram; coordenadores e admins podem editar qualquer uma. Retorna `404` se não encontrar e `403` se não tiver permissão sobre aquela ocorrência específica.
-
-### `DELETE /occurrences/{id}`
-Deleta uma ocorrência. Requer `OCCURRENCES_DELETE`. Mesma regra do `PUT`: professor só deleta as próprias. Retorna `404` se não encontrar.
+| Método | Rota                  | Permissão              | Comportamento                                          |
+|--------|-----------------------|------------------------|--------------------------------------------------------|
+| POST   | `/occurrences`        | OCCURRENCES_CREATE     | Cria ocorrência; `created_by_id` = usuário logado     |
+| GET    | `/occurrences`        | OCCURRENCES_VIEW_ALL   | Coordenador/admin vê todas                            |
+| GET    | `/occurrences/me`     | OCCURRENCES_VIEW_OWN   | Aluno vê as suas; professor vê as que criou           |
+| GET    | `/occurrences/{id}`   | OCCURRENCES_VIEW_OWN   | Aluno só vê as próprias; professor/coord vê qualquer  |
+| PUT    | `/occurrences/{id}`   | OCCURRENCES_EDIT       | Professor só edita as que criou; coord edita qualquer |
+| DELETE | `/occurrences/{id}`   | OCCURRENCES_DELETE     | Mesma regra do PUT                                     |
 
 ---
 
-## Passo 5 — Registrar o router em `app.py`
+## Decisões de design relevantes
 
-Importe o router de ocorrências e registre-o com `app.include_router(...)`, assim como já foi feito com `users` e `auth`.
+### Por que não há `relationship()` no model `Occurrence`?
+O SQLAlchemy 2.x com `mapped_as_dataclass` tem um bug: após `session.refresh()`,
+um `relationship` com `lazy='noload'` e `default=None` sobrescreve a FK escalar
+(`created_by_id`) com `None` em memória, mesmo que o valor esteja correto no banco.
+
+Como `OccurrencePublic` usa apenas os campos escalares (`student_id`, `created_by_id`),
+os relationships são desnecessários e foram omitidos para evitar o bug.
+
+### Por que `_get_occurrence_or_404` e `_assert_can_modify` são funções auxiliares?
+Para evitar repetição nas rotas PUT e DELETE, que têm exatamente a mesma
+lógica de busca e verificação de autoria. Mantém os handlers curtos e legíveis.
+
+### Por que `created_by_id` usa `SET NULL` e não `CASCADE`?
+Se o professor que criou a ocorrência for deletado do sistema, a ocorrência
+deve ser preservada (é um registro histórico). O campo `created_by_id` vira
+`None`, mas os dados da ocorrência permanecem.
+
+Ao contrário, `student_id` usa `CASCADE`: se o aluno for deletado, suas
+ocorrências não fazem mais sentido e são deletadas junto.
 
 ---
 
-## Passo 6 — Atualizar o `migrations/env.py`
+## Padrão para novas features
 
-Importe o model `Occurrence` no arquivo `env.py` do Alembic, junto aos outros imports de models. Sem isso, o Alembic não detecta a nova tabela na hora de gerar a migration.
+Use esta estrutura como modelo ao implementar Delays, Atestados, etc.:
 
----
+```python
+# routers.py — padrão de rota com permissão e helper de 404
+@router.post(
+    '/',
+    status_code=HTTPStatus.CREATED,
+    response_model=FeaturePublic,
+    dependencies=[Depends(PermissionChecker({SystemPermissions.FEATURE_CREATE}))],
+)
+async def create_feature(data: FeatureCreate, session: Session, current_user: CurrentUser):
+    ...
 
-## Passo 7 — Gerar e aplicar a migration
-
-Execute os dois comandos do Alembic: primeiro para gerar o arquivo de migration com `--autogenerate` e depois para aplicá-lo com `upgrade head`. Antes de aplicar, abra o arquivo gerado em `migrations/versions/` e confirme que ele está criando a tabela `occurrences` com todas as colunas e FKs esperadas.
-
----
-
-## Resumo dos arquivos
-
-| Ação | Arquivo |
-|------|---------|
-| ✅ Criar | `app/domains/occurrences/__init__.py` |
-| ✅ Criar | `app/domains/occurrences/models.py` |
-| ✅ Criar | `app/domains/occurrences/schemas.py` |
-| ✅ Criar | `app/domains/occurrences/routers.py` |
-| ✏️ Editar | `app/app.py` |
-| ✏️ Editar | `migrations/env.py` |
-| ▶️ Executar | `alembic revision --autogenerate` + `upgrade head` |
+async def _get_feature_or_404(feature_id: int, session: AsyncSession) -> Feature:
+    feature = await session.scalar(select(Feature).where(Feature.id == feature_id))
+    if not feature:
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail='Feature not found')
+    return feature
+```
