@@ -61,8 +61,8 @@ async def login_for_access_token(
         'refresh_token',
         refresh_token,
         httponly=True,
-        secure=settings.ENVIRONMENT == 'production',
-        samesite='none',  # !!! Em produção: samesite='none', secure=True,
+        secure=settings.COOKIE_SECURE,
+        samesite=settings.COOKIE_SAME_SITE,
         path=ESCOPO_REFRESH_TOKEN,
         max_age=settings.REFRESH_TOKEN_EXPIRE_MINUTES * 60,
     )
@@ -77,7 +77,13 @@ async def login_for_access_token(
 @router.post('/logout')
 async def logout(response: Response):
     # Remove o cookie de refresh token
-    response.delete_cookie('refresh_token')
+    response.delete_cookie(
+        'refresh_token',
+        path=ESCOPO_REFRESH_TOKEN,  # ← precisa bater com o path de criação
+        samesite=settings.COOKIE_SAME_SITE,
+        secure=settings.COOKIE_SECURE,
+        httponly=True,
+    )
     return {'message': 'Logout successful'}
 
 
@@ -123,8 +129,8 @@ async def refresh_access_token(
         'refresh_token',
         new_refresh_token,
         httponly=True,
-        secure=settings.ENVIRONMENT == 'production',
-        samesite='none',  # !!! Em produção: samesite='none', secure=True,
+        secure=settings.COOKIE_SECURE,
+        samesite=settings.COOKIE_SAME_SITE,
         path=ESCOPO_REFRESH_TOKEN,
         max_age=settings.REFRESH_TOKEN_EXPIRE_MINUTES * 60,
     )
