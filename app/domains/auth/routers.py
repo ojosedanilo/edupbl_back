@@ -62,7 +62,7 @@ async def login_for_access_token(
         refresh_token,
         httponly=True,
         secure=settings.ENVIRONMENT == 'production',
-        samesite='strict',
+        samesite='none',  # !!! Em produção: samesite='none', secure=True,
         path=ESCOPO_REFRESH_TOKEN,
         max_age=settings.REFRESH_TOKEN_EXPIRE_MINUTES * 60,
     )
@@ -124,7 +124,7 @@ async def refresh_access_token(
         new_refresh_token,
         httponly=True,
         secure=settings.ENVIRONMENT == 'production',
-        samesite='strict',
+        samesite='none',  # !!! Em produção: samesite='none', secure=True,
         path=ESCOPO_REFRESH_TOKEN,
         max_age=settings.REFRESH_TOKEN_EXPIRE_MINUTES * 60,
     )
