@@ -9,7 +9,7 @@ from alembic import context
 
 from app.core.settings import settings
 from app.shared.db.registry import mapper_registry
-import app.domains.occurrences.models  # noqa: F401 — registra Occurrence no metadata
+import app.shared.db.models  # noqa: F401 — registra Occurrence no metadata
 
 
 # this is the Alembic Config object, which provides
