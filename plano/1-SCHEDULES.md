@@ -45,7 +45,7 @@ A grade semanal e os eventos especiais têm naturezas diferentes. A grade é rec
 | `id`           | PK                       |                                         |
 | `classroom_id` | FK → classrooms         | CASCADE DELETE                          |
 | `teacher_id`   | FK → users (TEACHER)    | SET NULL se professor for deletado      |
-| `weekday`      | Integer (0=seg … 4=sex) | Dia da semana                           |
+| `weekday`      | Integer (2=seg … 6=sex) | Dia da semana                           |
 | `period`       | Integer (1–9)           | Número do período (ver tabela abaixo) |
 | `subject`      | String(100)              | Disciplina (ex: "Matemática")          |
 
@@ -148,7 +148,7 @@ Prefixo: `/schedules`
 
 ## Schemas
 
-**`SlotCreate`** — campos obrigatórios para criar um slot: `classroom_id`, `teacher_id` (nullable), `weekday` (0–4), `period` (1–9), `subject`.
+**`SlotCreate`** — campos obrigatórios para criar um slot: `classroom_id`, `teacher_id` (nullable), `weekday` (2–6), `period` (1–9), `subject`.
 
 **`SlotPublic`** — mesmos campos + `id`, com `from_attributes=True`.
 
