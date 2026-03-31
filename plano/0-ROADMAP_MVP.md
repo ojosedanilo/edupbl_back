@@ -51,7 +51,50 @@
 
 ## 🚧 O QUE FALTA PARA O MVP FUNCIONAL
 
-### Feature 1: Delays (Atrasos) 🔜 PRÓXIMO
+### Feature 1: Dashboard por Permissões (Frontend) 🔜 PRÓXIMO
+
+> Controle quais cards aparecem na `HomePage` com base nas permissões reais do
+> usuário, obtidas de `GET /auth/me/permissions`. Consulte o guia completo em
+> `plano/0-DASHBOARD-PERMISSOES-FRONTEND.md`.
+
+**Escopo:**
+- [ ] Criar `src/features/auth/models/Permissions.ts` (espelho do `SystemPermissions` do backend)
+- [ ] Criar `src/features/auth/hooks/usePermissions.ts` (hook com `can` e `canAny`)
+- [ ] Alterar `useLogout` para invalidar o cache de permissões
+- [ ] Criar `src/features/dashboard/featureCards.tsx` (configuração declarativa dos cards)
+- [ ] Alterar `HomePage` para filtrar cards com `canAny`
+- [ ] Criar `src/routes/PermissionRoute.tsx` (guard de rota)
+- [ ] Alterar `src/routes/index.tsx` para envolver rotas com `PermissionRoute`
+
+**Tempo estimado:** 1 dia
+
+---
+
+### Feature 2: Horários (Schedules) 🔜
+
+> **Por que horários antes dos atrasos?**
+> O fluxo de atrasos precisa saber qual professor está dando aula *agora* para
+> notificá-lo quando a entrada for aprovada. Sem horários no banco, isso é
+> impossível sem hardcode. Consulte `plano/1-SCHEDULES.md` para o guia completo.
+
+**Escopo mínimo:**
+- [ ] Criar domínio `app/domains/schedules/`
+- [ ] `periods.py` — constante `PERIODS` calculada automaticamente (50 min, com intervalos)
+- [ ] Model `ScheduleSlot` (classroom + teacher + weekday + period + subject)
+- [ ] Model `ScheduleOverride` (exceções pontuais: eventos, simulados)
+- [ ] Helper `get_current_teacher(classroom_id, at)` — usado pelo fluxo de atrasos
+- [ ] Endpoints CRUD de slots e overrides
+- [ ] Permissões: `SCHEDULES_VIEW` e `SCHEDULES_MANAGE` (adicionar em `permissions.py`)
+- [ ] Migration
+- [ ] Testes
+
+**Tempo estimado:** 2 dias
+
+---
+
+### Feature 3: Delays (Atrasos) 🔜
+
+> Consulte `plano/2-FEATURE_DELAYS.md` para o guia detalhado de implementação.
 
 **Escopo mínimo:**
 - [ ] Criar domínio `app/domains/delays/`
@@ -65,39 +108,50 @@
   - [ ] `GET /delays/me` — aluno vê seus próprios atrasos
 - [ ] Migration
 - [ ] Testes
-- [ ] Consulte `plano/3-FEATURE_DELAYS.md` para o guia completo
 
-**Tempo estimado:** 2–3 dias
+**Tempo estimado:** 2 dias
 
 ---
 
-### Feature 2: Importação de Usuários Reais 📋 ESSENCIAL
+### Feature 4: Notificações Básicas 📧
+
+> Consulte `plano/4-INTEGRACAO_WHATSAPP.md` para o guia completo.
+
+**Fluxo completo de notificações dos atrasos:**
+
+```
+Porteiro registra atraso
+  → notifica COORDENAÇÃO (atraso pendente)
+
+Coordenação aprova
+  → notifica RESPONSÁVEL do aluno (entrada autorizada)
+  → notifica PROFESSOR em aula agora via get_current_teacher() (aluno vai chegar)
+
+Coordenação rejeita
+  → notifica RESPONSÁVEL do aluno (entrada negada)
+```
+
+**Escopo:**
+- [ ] Configurar SMTP nas settings
+- [ ] `app/shared/notifications/email.py`
+- [ ] Templates simples de e-mail (texto puro no MVP)
+- [ ] Substituir os placeholders de notificação em `delays/routers.py`
+
+**Tempo estimado:** 1–2 dias
+
+---
+
+### Feature 5: Importação de Usuários Reais 📋
+
+> Consulte `plano/3-SEGURANCA_DADOS_REAIS.md` para o guia de segurança.
 
 **Escopo:**
 - [ ] `scripts/import_real_users.py`
 - [ ] Lê CSVs de `data/` (professores, alunos, coordenadores)
 - [ ] Valida dados e cria usuários no banco
 - [ ] Gera senhas temporárias + seta `must_change_password=True`
-- [ ] Consulte `plano/2-SEGURANCA_DADOS_REAIS.md` para o guia
 
 **Tempo estimado:** 1 dia
-
----
-
-### Feature 3: Notificações Básicas 📧 DESEJÁVEL
-
-**Escopo mínimo (e-mail):**
-- [ ] Configurar SMTP nas settings
-- [ ] `app/shared/notifications/email.py`
-- [ ] Templates simples de e-mail
-- [ ] Notificar responsável ao criar ocorrência
-- [ ] Notificar responsável e professor ao aprovar/rejeitar atraso
-- [ ] Notificar coordenação sobre novo atraso pendente
-
-**Nota:** WhatsApp pode vir depois — e-mail já resolve para MVP.
-**Consulte:** `plano/4-INTEGRACAO_WHATSAPP.md` (seção E-mail)
-
-**Tempo estimado:** 1–2 dias
 
 ---
 
@@ -105,28 +159,28 @@
 
 O sistema estará pronto para teste piloto quando este fluxo funcionar de ponta a ponta:
 
-1. Professor faz login → registra ocorrência do aluno João
-2. Responsável do João faz login → vê a ocorrência
-3. Responsável recebe e-mail de notificação
-4. Porteiro faz login → registra atraso do João
-5. Coordenação faz login → aprova o atraso
-6. Professor vê que João foi autorizado a entrar
-7. Responsável recebe e-mail sobre o atraso
+1. Coordenação cadastra os horários de cada turma
+2. Porteiro faz login → vê apenas os cards relevantes (Atrasos) → registra atraso do João
+3. Coordenação recebe notificação (e-mail) → aprova a entrada
+4. Professor que está em aula agora recebe notificação → sabe que João vai chegar
+5. Responsável do João recebe e-mail sobre o atraso aprovado
+6. Professor faz login → registra ocorrência do João por comportamento
+7. Responsável vê a ocorrência no sistema
 
 ---
 
-## 📅 Cronograma Estimado
+## 📅 Cronograma Estimado (atualizado)
 
-| Semana | Tarefas                                        | Status |
-|--------|------------------------------------------------|--------|
-| **1**  | ✅ Occurrences (concluído)                     | ✅     |
-| **2**  | Delays (backend completo + testes)             | 🔜     |
-| **3**  | Importação de usuários reais + Notificações    | 🔜     |
-| **4**  | Testes, ajustes, deploy                        | 🔜     |
-| **5**  | Teste piloto com 2 turmas                      | 🔜     |
-| **6+** | Feedback, ajustes, novas features              | 🔜     |
+| Semana | Tarefas                                                | Status |
+|--------|--------------------------------------------------------|--------|
+| **1**  | ✅ Occurrences (concluído)                             | ✅     |
+| **2**  | Dashboard por permissões (frontend) + Horários         | 🔜     |
+| **3**  | Delays: model, endpoints, testes                       | 🔜     |
+| **4**  | Notificações: e-mail + integração com delays           | 🔜     |
+| **5**  | Importação de usuários reais + testes piloto           | 🔜     |
+| **6+** | Feedback, ajustes, novas features                      | 🔜     |
 
-**Total até MVP funcional:** ~2–3 semanas restantes
+**Total até MVP funcional:** ~3–4 semanas restantes
 
 ---
 
@@ -140,9 +194,11 @@ O sistema estará pronto para teste piloto quando este fluxo funcionar de ponta 
 ✅ RBAC
 ✅ Users CRUD
 ✅ Occurrences
+🔜 Dashboard por permissões (frontend)
+🔜 Schedules (horários) — necessário para delays
 🔜 Delays
-🔜 Importação de usuários reais
 🔜 Notificações básicas
+🔜 Importação de usuários reais
 ```
 
 ---
@@ -150,16 +206,16 @@ O sistema estará pronto para teste piloto quando este fluxo funcionar de ponta 
 ## 🚀 Depois do MVP: Features Complementares
 
 ### Curto Prazo (1–2 meses)
+- [ ] Tela de horários no frontend (usando `GET /schedules/classroom/{id}`)
 - [ ] Atestados (aluno/responsável submete → DT valida → coordenação aprova)
 - [ ] Notificações WhatsApp (migrar de e-mail)
 - [ ] Dashboard com estatísticas básicas
-- [ ] Filtros avançados (datas, turmas, tipos)
 
 ### Médio Prazo (3–6 meses)
 - [ ] Gerenciamento de espaços (biblioteca, auditório)
 - [ ] Reserva de mídias (projetores, notebooks)
-- [ ] Horários de aula (tabela `class_schedules`)
 - [ ] Banco de questões e planos de aula
+- [ ] Filtros avançados (datas, turmas, tipos)
 
 ### Longo Prazo (6+ meses)
 - [ ] Sistema de sugestões com moderação
@@ -174,8 +230,8 @@ O sistema estará pronto para teste piloto quando este fluxo funcionar de ponta 
 **Sistema funcional ≠ Sistema perfeito.**
 
 Foco agora:
-1. ✅ Delays
-2. ✅ Importação de usuários
-3. ✅ Notificações básicas (e-mail)
-
-Deixe para depois: WhatsApp, dashboards, horários, atestados, espaços.
+1. Dashboard por permissões (1 dia — já temos tudo no backend)
+2. Horários (2 dias — desbloqueiam os delays)
+3. Delays (2 dias)
+4. Notificações (1–2 dias)
+5. Importação de usuários reais (1 dia)
