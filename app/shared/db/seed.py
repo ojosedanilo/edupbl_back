@@ -237,6 +237,7 @@ async def seed_test_users(session: AsyncSession):
 # ---------------------------------------------------------------------------
 
 DATA_DIR = Path(__file__).parent.parent.parent.parent / 'data'
+USUARIOS_DIR = DATA_DIR / 'usuarios'
 
 # (nome_arquivo, role_padrão, is_tutor, usa_campo_sala)
 CSV_CONFIG = [
@@ -268,7 +269,7 @@ async def seed_real_users(session: AsyncSession):  # noqa: PLR0914
     total_criados = 0
 
     for filename, default_role, default_is_tutor, usa_sala in CSV_CONFIG:
-        filepath = DATA_DIR / filename
+        filepath = USUARIOS_DIR / filename
 
         if not filepath.exists():
             print(f'AVISO {filename} nao encontrado — pulando.')

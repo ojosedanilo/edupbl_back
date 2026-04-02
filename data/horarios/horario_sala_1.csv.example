@@ -1,0 +1,25 @@
+email_professor,dia_semana,numero_periodo,tipo,titulo
+maria.silva@escola.com,2,1,class_period,Matemática
+maria.silva@escola.com,2,2,class_period,Matemática
+joao.santos@escola.com,2,3,class_period,Português
+,2,,snack_break,Intervalo
+ana.costa@escola.com,2,4,class_period,Ciências
+ana.costa@escola.com,2,5,class_period,Ciências
+,2,,lunch_break,Almoço
+pedro.prof@escola.com,2,6,class_period,História
+pedro.prof@escola.com,2,7,class_period,História
+,2,,snack_break,Intervalo
+lucas.prof@escola.com,2,8,class_period,Educação Física
+lucas.prof@escola.com,2,9,class_period,Educação Física
+maria.silva@escola.com,3,1,class_period,Matemática
+joao.santos@escola.com,3,2,class_period,Português
+joao.santos@escola.com,3,3,class_period,Português
+,3,,snack_break,Intervalo
+ana.costa@escola.com,3,4,class_period,Ciências
+,3,,lunch_break,Almoço
+pedro.prof@escola.com,3,5,class_period,História
+pedro.prof@escola.com,3,6,class_period,História
+maria.silva@escola.com,3,7,planning,Planejamento
+,3,,snack_break,Intervalo
+lucas.prof@escola.com,3,8,class_period,Educação Física
+lucas.prof@escola.com,3,9,class_period,Educação Física
