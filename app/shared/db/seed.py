@@ -238,8 +238,6 @@ async def seed_test_users(session: AsyncSession):
 
 DATA_DIR = Path(__file__).parent.parent.parent.parent / 'data'
 
-print(f'!!! {DATA_DIR}')
-
 # (nome_arquivo, role_padrão, is_tutor, usa_campo_sala)
 CSV_CONFIG = [
     ('admins.csv', UserRole.ADMIN, False, False),

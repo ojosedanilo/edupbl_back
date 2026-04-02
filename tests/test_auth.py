@@ -10,8 +10,6 @@ Gaps cobertos:
 
 from http import HTTPStatus
 
-import pytest
-
 from app.shared.rbac.roles import UserRole
 from app.shared.security import create_refresh_token
 from tests.conftest import _make_user, make_token

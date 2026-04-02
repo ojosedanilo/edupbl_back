@@ -16,7 +16,6 @@ Gaps cobertos:
 from http import HTTPStatus
 from types import SimpleNamespace
 
-import pytest
 import pytest_asyncio
 
 from app.shared.rbac.roles import UserRole

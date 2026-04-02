@@ -76,7 +76,6 @@ async def client(engine):
         async with AsyncSession(engine, expire_on_commit=False) as _session:
             yield _session
 
-    print(app, type(app))
     app.dependency_overrides[get_session] = get_session_override
 
     with TestClient(app) as _client:
