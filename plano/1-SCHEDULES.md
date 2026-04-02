@@ -370,15 +370,15 @@ Crie `tests/test_schedules.py` cobrindo:
 
 ## Checklist de Implementação
 
-- [ ] Criar `app/domains/schedules/__init__.py`
-- [ ] Criar `app/domains/schedules/periods.py` + testes unitários dos períodos
-- [ ] Criar `app/domains/schedules/models.py` (ScheduleSlot, ScheduleOverride, override_classrooms)
-- [ ] Criar `app/domains/schedules/schemas.py`
-- [ ] Criar `app/domains/schedules/helpers.py` (get_current_teacher)
-- [ ] Criar `app/domains/schedules/routers.py`
-- [ ] Adicionar `SCHEDULES_VIEW` e `SCHEDULES_MANAGE` em `permissions.py`
-- [ ] Atualizar `ROLE_PERMISSIONS` para incluir `SCHEDULES_VIEW` nas roles corretas
-- [ ] Registrar router em `app/main.py`
-- [ ] Importar models em `migrations/env.py`
-- [ ] Gerar e aplicar migration
-- [ ] Criar `tests/test_schedules.py`
+- [X] Criar `app/domains/schedules/__init__.py`
+- [X] Criar `app/domains/schedules/periods.py` + testes unitários dos períodos
+- [X] Criar `app/domains/schedules/models.py` (ScheduleSlot, ScheduleOverride, override_classrooms)
+- [X] Criar `app/domains/schedules/schemas.py`
+- [X] Criar `app/domains/schedules/helpers.py` (get_current_teacher)
+- [X] Criar `app/domains/schedules/routers.py`
+- [X] Adicionar `SCHEDULES_VIEW` e `SCHEDULES_MANAGE` em `permissions.py`
+- [X] Atualizar `ROLE_PERMISSIONS` para incluir `SCHEDULES_VIEW` nas roles corretas
+- [X] Registrar router em `app/main.py`
+- [X] Importar models em `migrations/env.py`
+- [X] Gerar e aplicar migration
+- [X] Criar `tests/test_schedules.py`
