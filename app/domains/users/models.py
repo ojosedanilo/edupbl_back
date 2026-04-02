@@ -113,9 +113,13 @@ class User:
     )
 
     # Professor Diretor de Turma — concede permissões extras ao TEACHER
-    is_tutor: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_tutor: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
 
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False
+    )
 
     # Força o usuário a trocar a senha no primeiro login
     # (definido como True em importações via CSV)

@@ -18,6 +18,11 @@ from app.shared.db.registry import mapper_registry  # noqa: E402, I001
 # import app.shared.db.models  # noqa: E402, I001
 from app.domains.users.models import User  # noqa: E402, I001
 from app.domains.occurrences.models import Occurrence  # noqa: E402, F401, I001
+from app.domains.schedules.models import (  # noqa: E402, F401, I001
+    ScheduleSlot,
+    ScheduleOverride,
+    override_classrooms,
+)
 from app.shared.db.database import get_session  # noqa: E402, I001
 from app.shared.rbac.roles import UserRole  # noqa: E402, I001
 from app.shared.security import (  # noqa: E402, I001
@@ -137,8 +142,38 @@ class UserFactory(factory.Factory):
 async def _make_user(session, **kwargs):
     """Cria e persiste um usuario, expondo clean_password."""
     password = kwargs.pop('clean_password', 'testtest')
+
+    # Campos declarados no UserFactory — passados normalmente para o factory.
+    # Quaisquer outros kwargs (ex: classroom_id) são definidos via setattr
+    # após a criação, contornando limitações do factory-boy com
+    # mapped_as_dataclass do SQLAlchemy 2.x.
+    factory_fields = {
+        'role',
+        'is_tutor',
+        'is_active',
+        'must_change_password',
+        'username',
+        'first_name',
+        'last_name',
+        'email',
+    }
+    extra_fields = {
+        k: kwargs.pop(k) for k in list(kwargs) if k not in factory_fields
+    }
+
     user = UserFactory(password=get_password_hash(password), **kwargs)
+
+    # extra_fields (ex: classroom_id) precisam ser aplicados DEPOIS do flush
+    # inicial. Com mapped_as_dataclass, o __init__ usa object.__setattr__,
+    # e o relacionamento classroom=None sobrepõe classroom_id durante o flush
+    # se o valor for definido no objeto transiente. Ao fazer flush primeiro e
+    # só então setar via ORM (objeto persistente), o UPDATE é emitido corretamente.
     session.add(user)
+    await session.flush()
+
+    for field, value in extra_fields.items():
+        setattr(user, field, value)
+
     await session.commit()
     await session.refresh(user)
     user.clean_password = password

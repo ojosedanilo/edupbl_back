@@ -36,6 +36,7 @@ oauth2_scheme = OAuth2PasswordBearer(
 # Criação de tokens JWT                                                        #
 # --------------------------------------------------------------------------- #
 
+
 def create_access_token(data: dict) -> str:
     """
     Cria um JWT de curta duração para autenticação de requisições.
@@ -70,6 +71,7 @@ def create_refresh_token(data: dict) -> str:
 # Hash de senhas                                                               #
 # --------------------------------------------------------------------------- #
 
+
 def get_password_hash(password: str) -> str:
     """Retorna o hash Argon2 da senha em texto puro."""
     return pwd_context.hash(password)
@@ -83,6 +85,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 # --------------------------------------------------------------------------- #
 # FastAPI Dependency: usuário autenticado                                      #
 # --------------------------------------------------------------------------- #
+
 
 async def get_current_user(
     session: AsyncSession = Depends(get_session),
@@ -130,5 +133,10 @@ async def get_current_user(
 
     if not user:
         raise credentials_exception
+
+    if not user.is_active:
+        raise HTTPException(
+            status_code=HTTPStatus.FORBIDDEN, detail='Inactive user'
+        )
 
     return user

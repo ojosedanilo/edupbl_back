@@ -23,7 +23,7 @@ from app.shared.security import get_current_user
 class PermissionChecker:
     """
     Dependency de permissão — bloqueia a rota se o usuário não possuir
-    todas as permissões exigidas.
+    TODAS as permissões exigidas (lógica AND).
 
     Uso:
         Depends(PermissionChecker({SystemPermissions.OCCURRENCES_CREATE}))
@@ -42,6 +42,33 @@ class PermissionChecker:
         )
 
 
+class AnyPermissionChecker:
+    """
+    Dependency de permissão — bloqueia a rota se o usuário não possuir
+    PELO MENOS UMA das permissões exigidas (lógica OR).
+
+    Uso típico: endpoints que aceitam múltiplos perfis com permissões distintas,
+    ex.: VIEW_ALL | VIEW_OWN | VIEW_CHILD.
+
+        Depends(AnyPermissionChecker({
+            SystemPermissions.SCHEDULES_VIEW_ALL,
+            SystemPermissions.SCHEDULES_VIEW_OWN,
+        }))
+    """
+
+    def __init__(self, required_permissions: set[SystemPermissions]):
+        self.required_permissions = required_permissions
+
+    def __call__(self, user: User = Depends(get_current_user)) -> User:
+        if helpers.user_has_any_permission(user, self.required_permissions):
+            return user
+
+        raise HTTPException(
+            status_code=HTTPStatus.FORBIDDEN,
+            detail='Insufficient permissions',
+        )
+
+
 def role_required(required_roles: list[UserRole]):
     """
     Dependency de role — bloqueia a rota se o usuário não possuir
@@ -50,6 +77,7 @@ def role_required(required_roles: list[UserRole]):
     Uso:
         Depends(role_required([UserRole.COORDINATOR, UserRole.ADMIN]))
     """
+
     def wrapper(user: User = Depends(get_current_user)) -> User:
         if user.role not in required_roles:
             raise HTTPException(
@@ -61,7 +89,8 @@ def role_required(required_roles: list[UserRole]):
     return wrapper
 
 
-# ── Helpers para uso direto em lógica de negócio (fora de Depends) ────────── #
+# ── Helpers para uso direto em lógica de negócio (fora de Depends) ───────── #
+
 
 def require_permission(user: User, permission: SystemPermissions) -> bool:
     """Verifica uma única permissão. Use em if statements dentro das rotas."""
