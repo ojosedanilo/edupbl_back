@@ -1,5 +1,10 @@
 """
-Rotas de usuários: CRUD e troca de senha.
+Rotas de usuários:
+  POST /users
+  GET /users
+  PUT /users/{user_id}
+  PATCH /users/me/password
+  DELETE /users/{user_id}
 
 Regras de autorização:
   - Criar usuário: aberto (sem autenticação)
@@ -11,7 +16,7 @@ Regras de autorização:
 from http import HTTPStatus
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -110,10 +115,10 @@ async def read_users(
 
 @router.put('/{user_id}', response_model=UserPublic)
 async def update_user(
-    user_id: int,
     user: UserUpdate,
     session: Session,
     current_user: CurrentUser,
+    user_id: int = Path(alias='user_id'),
 ):
     """
     Atualiza os dados do usuário.
@@ -193,9 +198,9 @@ async def change_my_password(
 
 @router.delete('/{user_id}', response_model=Message)
 async def delete_user(
-    user_id: int,
     session: Session,
     current_user: CurrentUser,
+    user_id: int = Path(alias='user_id'),
 ):
     """
     Deleta o usuário. Apenas o próprio usuário pode se deletar.

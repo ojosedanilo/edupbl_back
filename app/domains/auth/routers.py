@@ -1,5 +1,11 @@
 """
-Rotas de autenticação: login, logout, refresh e perfil do usuário logado.
+Rotas de autenticação:
+  POST /auth/token
+  POST /auth/logout
+  POST /auth/refresh_token
+  GET  /auth/me
+  GET  /auth/me/permissions
+  GET  /auth/admin
 
 Estratégia de tokens:
   - access_token  → JWT de curta duração, enviado no header Authorization
@@ -38,8 +44,8 @@ REFRESH_COOKIE_PATH = '/auth/refresh_token'
 router = APIRouter(prefix='/auth', tags=['auth'])
 
 # Aliases de dependency para reduzir repetição nas assinaturas
-OAuth2Form  = Annotated[OAuth2PasswordRequestForm, Depends()]
-Session     = Annotated[AsyncSession, Depends(get_session)]
+OAuth2Form = Annotated[OAuth2PasswordRequestForm, Depends()]
+Session = Annotated[AsyncSession, Depends(get_session)]
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
@@ -66,7 +72,7 @@ def _build_token_response(user: User, response: Response) -> dict:
     Cria access + refresh tokens, grava o refresh no cookie e retorna
     o dicionário que será serializado como Token pelo endpoint.
     """
-    access_token  = create_access_token(data={'sub': user.email})
+    access_token = create_access_token(data={'sub': user.email})
     refresh_token = create_refresh_token(data={'sub': user.email})
     _set_refresh_cookie(response, refresh_token)
 
@@ -80,6 +86,7 @@ def _build_token_response(user: User, response: Response) -> dict:
 # --------------------------------------------------------------------------- #
 # POST /auth/token — Login                                                    #
 # --------------------------------------------------------------------------- #
+
 
 @router.post('/token', response_model=Token)
 async def login_for_access_token(
@@ -110,6 +117,7 @@ async def login_for_access_token(
 # POST /auth/logout — Logout                                                  #
 # --------------------------------------------------------------------------- #
 
+
 @router.post('/logout')
 async def logout(response: Response):
     """
@@ -131,6 +139,7 @@ async def logout(response: Response):
 # --------------------------------------------------------------------------- #
 # POST /auth/refresh_token — Renovação de tokens                             #
 # --------------------------------------------------------------------------- #
+
 
 @router.post('/refresh_token', response_model=Token)
 async def refresh_access_token(
@@ -176,10 +185,16 @@ async def refresh_access_token(
 # GET /auth/me — Perfil do usuário logado                                     #
 # --------------------------------------------------------------------------- #
 
+
 @router.get('/me', response_model=UserPublic)
 async def get_me(current_user: CurrentUser):
     """Retorna os dados públicos do usuário autenticado."""
     return current_user
+
+
+# --------------------------------------------------------------------------- #
+# GET /auth/me/permissions — Permissões do usuário logado                     #
+# --------------------------------------------------------------------------- #
 
 
 @router.get('/me/permissions', response_model=UserWithPermissions)
@@ -193,6 +208,7 @@ async def get_me_permissions(current_user: CurrentUser):
 # --------------------------------------------------------------------------- #
 # GET /auth/admin — Rota de teste de role                                     #
 # --------------------------------------------------------------------------- #
+
 
 @router.get('/admin', response_model=UserPublic)
 async def get_admin(

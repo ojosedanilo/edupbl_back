@@ -13,7 +13,7 @@ Regras de autorização por endpoint:
 from http import HTTPStatus
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Path
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,7 +33,7 @@ from app.shared.security import get_current_user
 
 router = APIRouter(prefix='/occurrences', tags=['occurrences'])
 
-Session     = Annotated[AsyncSession, Depends(get_session)]
+Session = Annotated[AsyncSession, Depends(get_session)]
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
@@ -71,11 +71,14 @@ def _assert_can_modify(occurrence: Occurrence, current_user: User) -> None:
 # POST /occurrences — Criar ocorrência                                        #
 # --------------------------------------------------------------------------- #
 
+
 @router.post(
     '/',
     status_code=HTTPStatus.CREATED,
     response_model=OccurrencePublic,
-    dependencies=[Depends(PermissionChecker({SystemPermissions.OCCURRENCES_CREATE}))],
+    dependencies=[
+        Depends(PermissionChecker({SystemPermissions.OCCURRENCES_CREATE}))
+    ],
 )
 async def create_occurrence(
     data: OccurrenceCreate,
@@ -85,8 +88,8 @@ async def create_occurrence(
     """
     Registra uma nova ocorrência sobre um aluno.
 
-    O campo created_by_id é preenchido automaticamente com o usuário logado —
-    não é aceito no corpo da requisição.
+    O campo created_by_id é preenchido automaticamente com
+    o usuário logado — não é aceito no corpo da requisição.
     """
     student = await session.get(User, data.student_id)
     if not student:
@@ -111,10 +114,13 @@ async def create_occurrence(
 # GET /occurrences — Listar todas (coordenador/admin)                        #
 # --------------------------------------------------------------------------- #
 
+
 @router.get(
     '/',
     response_model=OccurrenceList,
-    dependencies=[Depends(PermissionChecker({SystemPermissions.OCCURRENCES_VIEW_ALL}))],
+    dependencies=[
+        Depends(PermissionChecker({SystemPermissions.OCCURRENCES_VIEW_ALL}))
+    ],
 )
 async def list_all_occurrences(session: Session):
     """Retorna todas as ocorrências do sistema. Acesso restrito a coordenadores e admins."""
@@ -126,10 +132,13 @@ async def list_all_occurrences(session: Session):
 # GET /occurrences/me — Minhas ocorrências                                   #
 # --------------------------------------------------------------------------- #
 
+
 @router.get(
     '/me',
     response_model=OccurrenceList,
-    dependencies=[Depends(PermissionChecker({SystemPermissions.OCCURRENCES_VIEW_OWN}))],
+    dependencies=[
+        Depends(PermissionChecker({SystemPermissions.OCCURRENCES_VIEW_OWN}))
+    ],
 )
 async def list_my_occurrences(session: Session, current_user: CurrentUser):
     """
@@ -139,9 +148,13 @@ async def list_my_occurrences(session: Session, current_user: CurrentUser):
     - Professor/outros: ocorrências que ele criou.
     """
     if current_user.role == UserRole.STUDENT:
-        stmt = select(Occurrence).where(Occurrence.student_id == current_user.id)
+        stmt = select(Occurrence).where(
+            Occurrence.student_id == current_user.id
+        )
     else:
-        stmt = select(Occurrence).where(Occurrence.created_by_id == current_user.id)
+        stmt = select(Occurrence).where(
+            Occurrence.created_by_id == current_user.id
+        )
 
     result = await session.scalars(stmt)
     return {'occurrences': result.all()}
@@ -151,15 +164,18 @@ async def list_my_occurrences(session: Session, current_user: CurrentUser):
 # GET /occurrences/{id} — Detalhe de uma ocorrência                         #
 # --------------------------------------------------------------------------- #
 
+
 @router.get(
     '/{occurrence_id}',
     response_model=OccurrencePublic,
-    dependencies=[Depends(PermissionChecker({SystemPermissions.OCCURRENCES_VIEW_OWN}))],
+    dependencies=[
+        Depends(PermissionChecker({SystemPermissions.OCCURRENCES_VIEW_OWN}))
+    ],
 )
 async def get_occurrence(
-    occurrence_id: int,
     session: Session,
     current_user: CurrentUser,
+    occurrence_id: int = Path(alias='occurrence_id'),
 ):
     """
     Retorna uma ocorrência específica.
@@ -185,16 +201,19 @@ async def get_occurrence(
 # PUT /occurrences/{id} — Atualizar ocorrência                              #
 # --------------------------------------------------------------------------- #
 
+
 @router.put(
     '/{occurrence_id}',
     response_model=OccurrencePublic,
-    dependencies=[Depends(PermissionChecker({SystemPermissions.OCCURRENCES_EDIT}))],
+    dependencies=[
+        Depends(PermissionChecker({SystemPermissions.OCCURRENCES_EDIT}))
+    ],
 )
 async def update_occurrence(
-    occurrence_id: int,
     data: OccurrenceUpdate,
     session: Session,
     current_user: CurrentUser,
+    occurrence_id: int = Path(alias='occurrence_id'),
 ):
     """
     Atualiza título e/ou descrição de uma ocorrência.
@@ -216,15 +235,18 @@ async def update_occurrence(
 # DELETE /occurrences/{id} — Deletar ocorrência                             #
 # --------------------------------------------------------------------------- #
 
+
 @router.delete(
     '/{occurrence_id}',
     response_model=OccurrencePublic,
-    dependencies=[Depends(PermissionChecker({SystemPermissions.OCCURRENCES_DELETE}))],
+    dependencies=[
+        Depends(PermissionChecker({SystemPermissions.OCCURRENCES_DELETE}))
+    ],
 )
 async def delete_occurrence(
-    occurrence_id: int,
     session: Session,
     current_user: CurrentUser,
+    occurrence_id: int = Path(alias='occurrence_id'),
 ):
     """
     Deleta permanentemente uma ocorrência.
