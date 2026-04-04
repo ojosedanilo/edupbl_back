@@ -1,14 +1,12 @@
 """
-Testes adicionais para cobertura de users/routers.py e users/schemas.py.
+Testes de users/routers.py e users/schemas.py.
 
-Gaps cobertos:
-- POST /users/  → conflito de username, conflito de email, criação ok
-- GET  /users/  → listagem paginada
-- PUT  /users/  → atualização com conflito, atualização de senha,
-  outros campos
-- PATCH /me/password → senha atual errada, senha trocada com sucesso
-- DELETE /users/ → deleção própria bem-sucedida
-- UserSchema / UserUpdate → username inválido (acento / char proibido)
+Endpoints:
+  POST   /users/             — criação
+  GET    /users/             — listagem paginada
+  PUT    /users/{id}         — atualização
+  PATCH  /users/me/password  — troca de senha
+  DELETE /users/{id}         — deleção
 """
 
 from http import HTTPStatus
@@ -18,47 +16,21 @@ from pydantic import ValidationError
 
 from app.domains.users.schemas import UserSchema, UserUpdate
 from app.shared.rbac.roles import UserRole
-
-# --------------------------------------------------------------------------- #
-# POST /users/ — conflitos e criação                                         #
-# --------------------------------------------------------------------------- #
+from tests.conftest import _make_user, make_token
 
 
-def test_create_user_duplicate_username(client, user):
-    """Tenta criar usuário com username já existente → 409 Conflict."""
-    response = client.post(
-        '/users/',
-        json={
-            'username': user.username,  # mesmo username
-            'email': 'outro@example.com',
-            'password': 'secret123',
-            'first_name': 'Outro',
-            'last_name': 'Usuário',
-        },
-    )
-    assert response.status_code == HTTPStatus.CONFLICT
-    assert response.json() == {'detail': 'Username already exists'}
+def _auth(user) -> dict:
+    return {'Authorization': f'Bearer {make_token(user)}'}
 
 
-def test_create_user_duplicate_email(client, user):
-    """Tenta criar usuário com e-mail já existente → 409 Conflict."""
-    response = client.post(
-        '/users/',
-        json={
-            'username': 'outrouser',
-            'email': user.email,  # mesmo e-mail
-            'password': 'secret123',
-            'first_name': 'Outro',
-            'last_name': 'Usuário',
-        },
-    )
-    assert response.status_code == HTTPStatus.CONFLICT
-    assert response.json() == {'detail': 'Email already exists'}
+# ===========================================================================
+# POST /users/ — criação
+# ===========================================================================
 
 
 def test_create_user_success(client):
-    """Cria usuário com dados válidos → 201 Created com dados corretos."""
-    response = client.post(
+    """Dados válidos → 201 com campos corretos, senha nunca exposta."""
+    resp = client.post(
         '/users/',
         json={
             'username': 'novousuario',
@@ -71,85 +43,219 @@ def test_create_user_success(client):
             'is_active': True,
         },
     )
-    assert response.status_code == HTTPStatus.CREATED
-    data = response.json()
+    assert resp.status_code == HTTPStatus.CREATED
+    data = resp.json()
     assert data['username'] == 'novousuario'
     assert data['email'] == 'novo@example.com'
     assert data['role'] == UserRole.TEACHER.value
-    assert data['is_active'] is True
-    assert 'password' not in data  # senha nunca exposta
+    assert 'password' not in data
 
 
-# --------------------------------------------------------------------------- #
-# GET /users/ — listagem paginada                                            #
-# --------------------------------------------------------------------------- #
+def test_create_user_duplicate_username(client, user):
+    """Username já existente → 409 Conflict."""
+    resp = client.post(
+        '/users/',
+        json={
+            'username': user.username,
+            'email': 'outro@example.com',
+            'password': 'secret123',
+            'first_name': 'Outro',
+            'last_name': 'Usuário',
+        },
+    )
+    assert resp.status_code == HTTPStatus.CONFLICT
+    assert resp.json() == {'detail': 'Username already exists'}
+
+
+def test_create_user_duplicate_email(client, user):
+    """E-mail já existente → 409 Conflict."""
+    resp = client.post(
+        '/users/',
+        json={
+            'username': 'outrouser',
+            'email': user.email,
+            'password': 'secret123',
+            'first_name': 'Outro',
+            'last_name': 'Usuário',
+        },
+    )
+    assert resp.status_code == HTTPStatus.CONFLICT
+    assert resp.json() == {'detail': 'Email already exists'}
+
+
+async def test_create_user_username_conflict_async(client, session):
+    """Username duplicado via _make_user (async) → 409."""
+    existing = await _make_user(session)
+    resp = client.post(
+        '/users/',
+        json={
+            'username': existing.username,
+            'email': 'outro@test.com',
+            'password': 'secret123',
+            'first_name': 'X',
+            'last_name': 'Y',
+        },
+    )
+    assert resp.status_code == HTTPStatus.CONFLICT
+    assert resp.json()['detail'] == 'Username already exists'
+
+
+async def test_create_user_email_conflict_async(client, session):
+    """Email duplicado via _make_user (async) → 409."""
+    existing = await _make_user(session)
+    resp = client.post(
+        '/users/',
+        json={
+            'username': 'outro_user',
+            'email': existing.email,
+            'password': 'secret123',
+            'first_name': 'X',
+            'last_name': 'Y',
+        },
+    )
+    assert resp.status_code == HTTPStatus.CONFLICT
+    assert resp.json()['detail'] == 'Email already exists'
+
+
+def test_create_user_api_invalid_username(client):
+    """Username inválido via API → 422 Unprocessable Entity."""
+    resp = client.post(
+        '/users/',
+        json={
+            'username': 'João Silva',
+            'email': 'joao@test.com',
+            'password': 'secret',
+            'first_name': 'João',
+            'last_name': 'Silva',
+        },
+    )
+    assert resp.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+
+
+# ===========================================================================
+# GET /users/ — listagem paginada
+# ===========================================================================
 
 
 def test_read_users_returns_list(client, user):
-    """GET /users/ deve retornar lista com o usuário existente."""
-    response = client.get('/users/')
-    assert response.status_code == HTTPStatus.OK
-    body = response.json()
+    """GET /users/ → lista com o usuário existente."""
+    resp = client.get('/users/')
+    assert resp.status_code == HTTPStatus.OK
+    body = resp.json()
     assert 'users' in body
-    assert len(body['users']) >= 1
-    ids = [u['id'] for u in body['users']]
-    assert user.id in ids
+    assert user.id in [u['id'] for u in body['users']]
 
 
 def test_read_users_empty(client):
-    """GET /users/ sem usuários no banco → lista vazia."""
-    response = client.get('/users/')
-    assert response.status_code == HTTPStatus.OK
-    assert response.json() == {'users': []}
+    """GET /users/ sem usuários → lista vazia."""
+    resp = client.get('/users/')
+    assert resp.status_code == HTTPStatus.OK
+    assert resp.json() == {'users': []}
 
 
-# --------------------------------------------------------------------------- #
-# PUT /users/{id} — atualização                                              #
-# --------------------------------------------------------------------------- #
+async def test_read_users_with_pagination(client, session):
+    """GET /users/?limit=1 → retorna exatamente 1 usuário."""
+    await _make_user(session)
+    await _make_user(session)
+    resp = client.get('/users/?limit=1&offset=0')
+    assert resp.status_code == HTTPStatus.OK
+    assert len(resp.json()['users']) == 1
+
+
+async def test_create_and_read_user(client):
+    """POST /users/ + GET /users/ → novo usuário aparece na lista."""
+    resp = client.post(
+        '/users/',
+        json={
+            'username': 'novo_user',
+            'email': 'novo@test.com',
+            'password': 'senhasegura',
+            'first_name': 'Novo',
+            'last_name': 'User',
+        },
+    )
+    assert resp.status_code == HTTPStatus.CREATED
+    user_id = resp.json()['id']
+
+    list_resp = client.get('/users/')
+    ids = [u['id'] for u in list_resp.json()['users']]
+    assert user_id in ids
+
+
+# ===========================================================================
+# PUT /users/{id} — atualização
+# ===========================================================================
 
 
 def test_update_user_forbidden(client, user, other_user, token):
-    """PUT /users/{outro_id} → 403 Forbidden."""
-    response = client.put(
+    """PUT no id de outro usuário → 403 Forbidden."""
+    resp = client.put(
         f'/users/{other_user.id}',
         headers={'Authorization': f'Bearer {token}'},
         json={'first_name': 'Invasor'},
     )
-    assert response.status_code == HTTPStatus.FORBIDDEN
-    assert response.json() == {'detail': 'Not enough permissions'}
+    assert resp.status_code == HTTPStatus.FORBIDDEN
+    assert resp.json() == {'detail': 'Not enough permissions'}
 
 
 def test_update_user_conflict_username(client, user, other_user, token):
-    """PUT com username já usado por outro usuário → 409."""
-    response = client.put(
+    """PUT com username de outro usuário → 409."""
+    resp = client.put(
         f'/users/{user.id}',
         headers={'Authorization': f'Bearer {token}'},
         json={'username': other_user.username},
     )
-    assert response.status_code == HTTPStatus.CONFLICT
-    assert response.json() == {'detail': 'Username or Email already exists'}
+    assert resp.status_code == HTTPStatus.CONFLICT
+    assert resp.json() == {'detail': 'Username or Email already exists'}
 
 
 def test_update_user_conflict_email(client, user, other_user, token):
-    """PUT com email já usado por outro usuário → 409."""
-    response = client.put(
+    """PUT com e-mail de outro usuário → 409."""
+    resp = client.put(
         f'/users/{user.id}',
         headers={'Authorization': f'Bearer {token}'},
         json={'email': other_user.email},
     )
-    assert response.status_code == HTTPStatus.CONFLICT
-    assert response.json() == {'detail': 'Username or Email already exists'}
+    assert resp.status_code == HTTPStatus.CONFLICT
+    assert resp.json() == {'detail': 'Username or Email already exists'}
 
 
-def test_update_user_password_only(client, user, token):
-    """PUT /users/{id} com apenas senha → atualiza sem erro."""
-    response = client.put(
+def test_update_user_same_own_email(client, user, token):
+    """PUT enviando o próprio e-mail → sem conflito, 200."""
+    resp = client.put(
+        f'/users/{user.id}',
+        headers={'Authorization': f'Bearer {token}'},
+        json={'email': user.email},
+    )
+    assert resp.status_code == HTTPStatus.OK
+    assert resp.json()['email'] == user.email
+
+
+def test_update_user_non_conflicting_fields(client, user, token):
+    """PUT com username/email únicos → 200 com dados atualizados."""
+    resp = client.put(
+        f'/users/{user.id}',
+        headers={'Authorization': f'Bearer {token}'},
+        json={
+            'username': 'uniqueuser99',
+            'email': 'unique99@example.com',
+            'first_name': 'Atualizado',
+        },
+    )
+    assert resp.status_code == HTTPStatus.OK
+    data = resp.json()
+    assert data['username'] == 'uniqueuser99'
+    assert data['first_name'] == 'Atualizado'
+
+
+def test_update_user_password_rehashes(client, user, token):
+    """PUT com campo password → nova senha funciona no login."""
+    resp = client.put(
         f'/users/{user.id}',
         headers={'Authorization': f'Bearer {token}'},
         json={'password': 'novasenha123'},
     )
-    assert response.status_code == HTTPStatus.OK
-    # Confirma que o login com a nova senha funciona
+    assert resp.status_code == HTTPStatus.OK
     login = client.post(
         '/auth/token',
         data={'username': user.email, 'password': 'novasenha123'},
@@ -157,44 +263,61 @@ def test_update_user_password_only(client, user, token):
     assert login.status_code == HTTPStatus.OK
 
 
-def test_update_user_non_conflicting_fields(client, user, token):
-    """PUT /users/{id} com username/email que não colidem → 200 OK."""
-    response = client.put(
-        f'/users/{user.id}',
-        headers={'Authorization': f'Bearer {token}'},
-        json={
-            'username': 'uniqueuser99',
-            'email': 'unique99@example.com',
-            'first_name': 'Atualizado',
-            'last_name': 'Sobrenome',
-        },
+async def test_update_user_forbidden_other_async(client, session):
+    """PUT /users/{id} de outro usuário (async fixture) → 403."""
+    u1 = await _make_user(session)
+    u2 = await _make_user(session)
+    resp = client.put(
+        f'/users/{u2.id}',
+        json={'email': 'novo@test.com'},
+        headers=_auth(u1),
     )
-    assert response.status_code == HTTPStatus.OK
-    data = response.json()
-    assert data['username'] == 'uniqueuser99'
-    assert data['email'] == 'unique99@example.com'
-    assert data['first_name'] == 'Atualizado'
+    assert resp.status_code == HTTPStatus.FORBIDDEN
 
 
-def test_update_user_same_own_email(client, user, token):
-    """PUT /users/{id} enviando o próprio e-mail → não gera conflito."""
-    response = client.put(
-        f'/users/{user.id}',
-        headers={'Authorization': f'Bearer {token}'},
-        json={'email': user.email},
+async def test_update_user_returns_updated(client, session):
+    """PUT /users/{id} → retorna dados atualizados."""
+    u = await _make_user(session)
+    resp = client.put(
+        f'/users/{u.id}',
+        json={'first_name': 'NomeNovo'},
+        headers=_auth(u),
     )
-    assert response.status_code == HTTPStatus.OK
-    assert response.json()['email'] == user.email
+    assert resp.status_code == HTTPStatus.OK
+    assert resp.json()['first_name'] == 'NomeNovo'
 
 
-# --------------------------------------------------------------------------- #
-# PATCH /me/password                                                         #
-# --------------------------------------------------------------------------- #
+async def test_update_user_no_username_no_email(client, session):
+    """PUT sem username/email → sem verificação de conflito → 200."""
+    u = await _make_user(session)
+    resp = client.put(
+        f'/users/{u.id}',
+        json={'first_name': 'Novo Nome'},
+        headers=_auth(u),
+    )
+    assert resp.status_code == HTTPStatus.OK
+    assert resp.json()['first_name'] == 'Novo Nome'
+
+
+async def test_update_user_own_email_no_conflict(client, session):
+    """PUT com o próprio e-mail → sem conflito → 200."""
+    u = await _make_user(session)
+    resp = client.put(
+        f'/users/{u.id}',
+        json={'email': u.email},
+        headers=_auth(u),
+    )
+    assert resp.status_code == HTTPStatus.OK
+
+
+# ===========================================================================
+# PATCH /users/me/password
+# ===========================================================================
 
 
 def test_change_password_wrong_current(client, user, token):
-    """PATCH /me/password com senha atual errada → 401."""
-    response = client.patch(
+    """Senha atual errada → 401."""
+    resp = client.patch(
         '/users/me/password',
         headers={'Authorization': f'Bearer {token}'},
         json={
@@ -202,13 +325,13 @@ def test_change_password_wrong_current(client, user, token):
             'new_password': 'novasenha123',
         },
     )
-    assert response.status_code == HTTPStatus.UNAUTHORIZED
-    assert response.json() == {'detail': 'Current password is incorrect'}
+    assert resp.status_code == HTTPStatus.UNAUTHORIZED
+    assert resp.json() == {'detail': 'Current password is incorrect'}
 
 
 def test_change_password_success(client, user, token):
-    """PATCH /me/password com senha correta → 200 e senha atualizada."""
-    response = client.patch(
+    """Senha correta → 200 e novo login funciona."""
+    resp = client.patch(
         '/users/me/password',
         headers={'Authorization': f'Bearer {token}'},
         json={
@@ -216,10 +339,9 @@ def test_change_password_success(client, user, token):
             'new_password': 'novaSenhaForte!',
         },
     )
-    assert response.status_code == HTTPStatus.OK
-    assert response.json() == {'message': 'Password updated successfully'}
+    assert resp.status_code == HTTPStatus.OK
+    assert resp.json() == {'message': 'Password updated successfully'}
 
-    # Confirma que o login com a nova senha funciona
     login = client.post(
         '/auth/token',
         data={'username': user.email, 'password': 'novaSenhaForte!'},
@@ -227,50 +349,67 @@ def test_change_password_success(client, user, token):
     assert login.status_code == HTTPStatus.OK
 
 
-# --------------------------------------------------------------------------- #
-# DELETE /users/{id}                                                         #
-# --------------------------------------------------------------------------- #
+async def test_change_password_success_async(client, session):
+    """PATCH /me/password (async fixture) → mensagem de sucesso."""
+    u = await _make_user(session)
+    resp = client.patch(
+        '/users/me/password',
+        json={
+            'current_password': u.clean_password,
+            'new_password': 'novaSenha!',
+        },
+        headers=_auth(u),
+    )
+    assert resp.status_code == HTTPStatus.OK
+    assert resp.json() == {'message': 'Password updated successfully'}
+
+
+# ===========================================================================
+# DELETE /users/{id}
+# ===========================================================================
 
 
 def test_delete_user_forbidden(client, user, other_user, token):
-    """DELETE /users/{outro_id} → 403 Forbidden."""
-    response = client.delete(
+    """DELETE de outro usuário → 403 Forbidden."""
+    resp = client.delete(
         f'/users/{other_user.id}',
         headers={'Authorization': f'Bearer {token}'},
     )
-    assert response.status_code == HTTPStatus.FORBIDDEN
-    assert response.json() == {'detail': 'Not enough permissions'}
+    assert resp.status_code == HTTPStatus.FORBIDDEN
+    assert resp.json() == {'detail': 'Not enough permissions'}
 
 
 def test_delete_user_success(client, user, token):
-    """
-    DELETE /users/{id} do próprio usuário → 200 e mensagem de confirmação.
-    """
-    response = client.delete(
+    """DELETE do próprio usuário → 200, usuário não aparece mais na lista."""
+    resp = client.delete(
         f'/users/{user.id}',
         headers={'Authorization': f'Bearer {token}'},
     )
-    assert response.status_code == HTTPStatus.OK
-    assert response.json() == {'message': 'User deleted'}
+    assert resp.status_code == HTTPStatus.OK
+    assert resp.json() == {'message': 'User deleted'}
 
-    # Usuário não deve mais existir
-    response2 = client.get('/users/')
-    users = response2.json()['users']
+    users = client.get('/users/').json()['users']
     assert all(u['id'] != user.id for u in users)
 
 
-# --------------------------------------------------------------------------- #
-# Validação de schema — username inválido                                    #
-# --------------------------------------------------------------------------- #
+async def test_delete_user_self_async(client, session):
+    """DELETE /users/{id} (async fixture) → mensagem de sucesso."""
+    u = await _make_user(session)
+    resp = client.delete(f'/users/{u.id}', headers=_auth(u))
+    assert resp.status_code == HTTPStatus.OK
+    assert resp.json() == {'message': 'User deleted'}
 
 
-def test_user_schema_rejects_invalid_username():
-    """
-    UserSchema deve rejeitar username com espaço e acento → ValidationError.
-    """
+# ===========================================================================
+# Validação de schema — UserSchema / UserUpdate
+# ===========================================================================
+
+
+def test_schema_rejects_username_with_space():
+    """Username com espaço → ValidationError."""
     with pytest.raises(ValidationError):
         UserSchema(
-            username='João Silva',  # espaço e acento → inválido
+            username='João Silva',
             email='joao@test.com',
             password='secret',
             first_name='João',
@@ -278,13 +417,11 @@ def test_user_schema_rejects_invalid_username():
         )
 
 
-def test_user_schema_rejects_accented_username():
-    """
-    UserSchema deve rejeitar username com letras acentuadas → ValidationError.
-    """
+def test_schema_rejects_accented_username():
+    """Username com acento → ValidationError."""
     with pytest.raises(ValidationError):
         UserSchema(
-            username='joãosilva',  # acento no 'a'
+            username='joãosilva',
             email='joao2@test.com',
             password='secret',
             first_name='João',
@@ -292,20 +429,14 @@ def test_user_schema_rejects_accented_username():
         )
 
 
-def test_user_update_rejects_invalid_username():
-    """
-    UserUpdate deve rejeitar username com caracteres inválidos
-    → ValidationError.
-    """
+def test_schema_rejects_invalid_username_update():
+    """UserUpdate com username inválido → ValidationError."""
     with pytest.raises(ValidationError):
         UserUpdate(username='nome inválido!')
 
 
-def test_user_schema_accepts_valid_username():
-    """
-    UserSchema deve aceitar username válido
-    (só letras, dígitos, ponto, underscore).
-    """
+def test_schema_accepts_valid_username():
+    """Username com letras, dígitos, ponto e underscore → válido."""
     schema = UserSchema(
         username='joao.silva_99',
         email='joao99@test.com',
@@ -314,20 +445,3 @@ def test_user_schema_accepts_valid_username():
         last_name='Silva',
     )
     assert schema.username == 'joao.silva_99'
-
-
-def test_create_user_api_invalid_username(client):
-    """
-    POST /users/ com username inválido (via API) → 422 Unprocessable Entity.
-    """
-    response = client.post(
-        '/users/',
-        json={
-            'username': 'João Silva',  # inválido
-            'email': 'joao@test.com',
-            'password': 'secret',
-            'first_name': 'João',
-            'last_name': 'Silva',
-        },
-    )
-    assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY

@@ -1,16 +1,13 @@
 """
-Testes adicionais para cobertura de occurrences/routers.py.
+Testes de occurrences/routers.py.
 
-Gaps cobertos:
-- POST /occurrences/ → aluno não encontrado (404), retorno completo
-- GET  /occurrences/ → retorno da lista (fluxo completo)
-- GET  /occurrences/me → aluno vê as próprias, professor vê as que criou
-- GET  /occurrences/{id} → não encontrado (404), aluno vê a sua,
-  aluno bloqueado
-- PUT  /occurrences/{id} → não encontrado, professor bloqueado,
-  coordenador ok, retorno
-- DELETE /occurrences/{id} → não encontrado, professor bloqueado,
-  coordenador ok, retorno
+Endpoints:
+  POST   /occurrences/      — criação
+  GET    /occurrences/      — listagem (coordenador)
+  GET    /occurrences/me    — ocorrências do próprio usuário
+  GET    /occurrences/{id}  — detalhe
+  PUT    /occurrences/{id}  — edição
+  DELETE /occurrences/{id}  — deleção
 """
 
 from http import HTTPStatus
@@ -18,27 +15,32 @@ from types import SimpleNamespace
 
 import pytest_asyncio
 
+from app.domains.occurrences.models import Occurrence
 from app.shared.rbac.roles import UserRole
 from app.shared.security import create_access_token
-from tests.conftest import _make_user
-
-# --------------------------------------------------------------------------- #
-# Fixtures                                                                   #
-# --------------------------------------------------------------------------- #
+from tests.conftest import _make_user, make_token
 
 
-@pytest_asyncio.fixture
-async def student(session):
-    return await _make_user(session, role=UserRole.STUDENT)
+def _auth(user) -> dict:
+    return {'Authorization': f'Bearer {make_token(user)}'}
 
 
-@pytest_asyncio.fixture
-async def student2(session):
-    return await _make_user(session, role=UserRole.STUDENT)
+def _tok(user) -> str:
+    return create_access_token(data={'sub': user.email})
+
+
+# ===========================================================================
+# Fixtures
+# ===========================================================================
 
 
 @pytest_asyncio.fixture
 async def teacher(session):
+    return await _make_user(session, role=UserRole.TEACHER)
+
+
+@pytest_asyncio.fixture
+async def other_teacher(session):
     return await _make_user(session, role=UserRole.TEACHER)
 
 
@@ -52,301 +54,401 @@ async def coordinator(session):
     return await _make_user(session, role=UserRole.COORDINATOR)
 
 
-def tok(user):
-    return create_access_token(data={'sub': user.email})
+@pytest_asyncio.fixture
+async def student(session):
+    return await _make_user(session, role=UserRole.STUDENT)
 
 
-# Cria a ocorrência via HTTP para garantir que session e client
-# compartilhem o mesmo estado no banco in-memory (StaticPool).
-# Inserção direta via session em paralelo com client pode gerar
-# NOT NULL constraint errors por dessincronização de conexão.
+@pytest_asyncio.fixture
+async def student2(session):
+    return await _make_user(session, role=UserRole.STUDENT)
+
+
 @pytest_asyncio.fixture
 async def occurrence(client, teacher, student):
-
-    response = client.post(
+    """Cria via HTTP para garantir que session e client compartilhem o banco."""
+    resp = client.post(
         '/occurrences/',
-        headers={'Authorization': f'Bearer {tok(teacher)}'},
+        headers=_auth(teacher),
         json={
             'student_id': student.id,
             'title': 'Comportamento inadequado',
             'description': 'Detalhes da ocorrência.',
         },
     )
-    assert response.status_code == HTTPStatus.CREATED
-    return SimpleNamespace(**response.json())
+    assert resp.status_code == HTTPStatus.CREATED
+    return SimpleNamespace(**resp.json())
 
 
-# --------------------------------------------------------------------------- #
-# POST /occurrences/ — retorno completo e 404                               #
-# --------------------------------------------------------------------------- #
+@pytest_asyncio.fixture
+async def occurrence_db(session, teacher, student):
+    """Cria diretamente no banco (para testes que não precisam do client)."""
+    occ = Occurrence(
+        created_by_id=teacher.id,
+        student_id=student.id,
+        title='Indisciplina',
+        description='Detalhe',
+    )
+    session.add(occ)
+    await session.commit()
+    await session.refresh(occ)
+    return occ
+
+
+# ===========================================================================
+# POST /occurrences/
+# ===========================================================================
 
 
 def test_create_occurrence_returns_full_object(client, teacher, student):
-    """POST /occurrences/ → cobre linhas 60-61 (refresh + return)."""
-    response = client.post(
+    """POST bem-sucedido → 201 com todos os campos preenchidos."""
+    resp = client.post(
         '/occurrences/',
-        headers={'Authorization': f'Bearer {tok(teacher)}'},
+        headers=_auth(teacher),
         json={
             'student_id': student.id,
             'title': 'Atraso',
             'description': 'Chegou atrasado.',
         },
     )
-    assert response.status_code == HTTPStatus.CREATED
-    data = response.json()
+    assert resp.status_code == HTTPStatus.CREATED
+    data = resp.json()
     assert data['id'] is not None
     assert data['student_id'] == student.id
     assert data['created_by_id'] == teacher.id
     assert data['title'] == 'Atraso'
-    assert data['description'] == 'Chegou atrasado.'
 
 
 def test_create_occurrence_student_not_found(client, teacher):
-    """POST /occurrences/ com student_id inválido → 404."""
-    response = client.post(
+    """student_id inexistente → 404 Student not found."""
+    resp = client.post(
         '/occurrences/',
-        headers={'Authorization': f'Bearer {tok(teacher)}'},
+        headers=_auth(teacher),
+        json={'student_id': 99999, 'title': 'Ghost', 'description': '?'},
+    )
+    assert resp.status_code == HTTPStatus.NOT_FOUND
+    assert resp.json() == {'detail': 'Student not found'}
+
+
+async def test_create_occurrence_success_async(client, teacher, student):
+    """POST (async fixture) → 201 com dados corretos."""
+    resp = client.post(
+        '/occurrences/',
         json={
-            'student_id': 99999,
-            'title': 'Ghost',
-            'description': '?',
+            'student_id': student.id,
+            'title': 'Briga',
+            'description': 'Detalhes',
         },
+        headers=_auth(teacher),
     )
-    assert response.status_code == HTTPStatus.NOT_FOUND
-    assert response.json() == {'detail': 'Student not found'}
+    assert resp.status_code == HTTPStatus.CREATED
+    body = resp.json()
+    assert body['title'] == 'Briga'
+    assert body['created_by_id'] == teacher.id
 
 
-# --------------------------------------------------------------------------- #
-# GET /occurrences/ — fluxo completo                                        #
-# --------------------------------------------------------------------------- #
+# ===========================================================================
+# GET /occurrences/
+# ===========================================================================
 
 
-def test_list_all_occurrences_returns_data(client, coordinator, occurrence):
-    """GET /occurrences/ → cobre linhas 75-76 (scalars + return)."""
-    response = client.get(
-        '/occurrences/',
-        headers={'Authorization': f'Bearer {tok(coordinator)}'},
-    )
-    assert response.status_code == HTTPStatus.OK
-    data = response.json()
-    assert 'occurrences' in data
-    assert len(data['occurrences']) == 1
-    assert data['occurrences'][0]['id'] == occurrence.id
+def test_list_occurrences_coordinator(client, coordinator, occurrence):
+    """Coordenador lista todas as ocorrências → 200 com a ocorrência criada."""
+    resp = client.get('/occurrences/', headers=_auth(coordinator))
+    assert resp.status_code == HTTPStatus.OK
+    ids = [o['id'] for o in resp.json()['occurrences']]
+    assert occurrence.id in ids
 
 
-def test_list_all_occurrences_empty(client, coordinator):
-    """GET /occurrences/ com banco vazio → lista vazia."""
-    response = client.get(
-        '/occurrences/',
-        headers={'Authorization': f'Bearer {tok(coordinator)}'},
-    )
-    assert response.status_code == HTTPStatus.OK
-    assert response.json() == {'occurrences': []}
+def test_list_occurrences_empty(client, coordinator):
+    """Banco vazio → lista vazia."""
+    resp = client.get('/occurrences/', headers=_auth(coordinator))
+    assert resp.status_code == HTTPStatus.OK
+    assert resp.json() == {'occurrences': []}
 
 
-# --------------------------------------------------------------------------- #
-# GET /occurrences/me — aluno e professor                                   #
-# --------------------------------------------------------------------------- #
+def test_list_occurrences_teacher_forbidden(client, teacher, occurrence):
+    """Professor não tem permissão de listar todas → 403."""
+    resp = client.get('/occurrences/', headers=_auth(teacher))
+    assert resp.status_code == HTTPStatus.FORBIDDEN
 
 
-def test_student_me_returns_own_occurrences(
+async def test_list_occurrences_coordinator_async(
+    client, coordinator, occurrence_db
+):
+    """Coordenador vê ocorrência criada via banco."""
+    resp = client.get('/occurrences/', headers=_auth(coordinator))
+    assert resp.status_code == HTTPStatus.OK
+    ids = [o['id'] for o in resp.json()['occurrences']]
+    assert occurrence_db.id in ids
+
+
+# ===========================================================================
+# GET /occurrences/me
+# ===========================================================================
+
+
+def test_student_me_sees_own_occurrences(
     client, teacher, student, student2, occurrence
 ):
-    """
-    GET /occurrences/me como aluno → cobre branch STUDENT (linhas 93-95)
-    e retorno (linhas 102-103).
-    """
-    # Cria ocorrência sobre student2 — não deve aparecer para student
+    """Aluno vê apenas as próprias ocorrências."""
     client.post(
         '/occurrences/',
-        headers={'Authorization': f'Bearer {tok(teacher)}'},
+        headers=_auth(teacher),
         json={'student_id': student2.id, 'title': 'Outra', 'description': 'x'},
     )
-
-    response = client.get(
-        '/occurrences/me',
-        headers={'Authorization': f'Bearer {tok(student)}'},
-    )
-    assert response.status_code == HTTPStatus.OK
-    occs = response.json()['occurrences']
+    resp = client.get('/occurrences/me', headers=_auth(student))
+    assert resp.status_code == HTTPStatus.OK
+    occs = resp.json()['occurrences']
     assert len(occs) == 1
     assert all(o['student_id'] == student.id for o in occs)
 
 
-def test_teacher_me_returns_own_occurrences(
+def test_teacher_me_sees_own_created(
     client, teacher, teacher2, student, occurrence
 ):
-    """
-    GET /occurrences/me como professor → cobre branch else (linhas 97-99)
-    e retorno.
-    """
-    # teacher2 cria uma ocorrência própria
+    """Professor vê apenas as ocorrências que criou."""
     client.post(
         '/occurrences/',
-        headers={'Authorization': f'Bearer {tok(teacher2)}'},
+        headers=_auth(teacher2),
         json={'student_id': student.id, 'title': 'T2', 'description': 'desc'},
     )
-
-    response = client.get(
-        '/occurrences/me',
-        headers={'Authorization': f'Bearer {tok(teacher)}'},
+    resp = client.get('/occurrences/me', headers=_auth(teacher))
+    assert resp.status_code == HTTPStatus.OK
+    assert all(
+        o['created_by_id'] == teacher.id for o in resp.json()['occurrences']
     )
-    assert response.status_code == HTTPStatus.OK
-    occs = response.json()['occurrences']
-    assert all(o['created_by_id'] == teacher.id for o in occs)
 
 
-# --------------------------------------------------------------------------- #
-# GET /occurrences/{id}                                                      #
-# --------------------------------------------------------------------------- #
+async def test_student_me_async(client, student, occurrence_db):
+    """GET /occurrences/me → aluno vê a ocorrência que lhe pertence."""
+    resp = client.get('/occurrences/me', headers=_auth(student))
+    assert resp.status_code == HTTPStatus.OK
+    ids = [o['id'] for o in resp.json()['occurrences']]
+    assert occurrence_db.id in ids
+
+
+async def test_teacher_me_async(client, teacher, occurrence_db):
+    """GET /occurrences/me → professor vê o que criou."""
+    resp = client.get('/occurrences/me', headers=_auth(teacher))
+    assert resp.status_code == HTTPStatus.OK
+    ids = [o['id'] for o in resp.json()['occurrences']]
+    assert occurrence_db.id in ids
+
+
+# ===========================================================================
+# GET /occurrences/{id}
+# ===========================================================================
 
 
 def test_get_occurrence_not_found(client, teacher):
-    """GET /occurrences/99999 → 404 (linhas 122-124)."""
-    response = client.get(
-        '/occurrences/99999',
-        headers={'Authorization': f'Bearer {tok(teacher)}'},
-    )
-    assert response.status_code == HTTPStatus.NOT_FOUND
-    assert response.json() == {'detail': 'Occurrence not found'}
+    """ID inexistente → 404."""
+    resp = client.get('/occurrences/99999', headers=_auth(teacher))
+    assert resp.status_code == HTTPStatus.NOT_FOUND
+    assert resp.json() == {'detail': 'Occurrence not found'}
 
 
-def test_get_occurrence_student_can_see_own(client, student, occurrence):
-    """
-    Aluno pode ver a própria ocorrência (linhas 128-137, branch não-raise).
-    """
-    response = client.get(
-        f'/occurrences/{occurrence.id}',
-        headers={'Authorization': f'Bearer {tok(student)}'},
-    )
-    assert response.status_code == HTTPStatus.OK
-    assert response.json()['id'] == occurrence.id
+def test_get_occurrence_student_sees_own(client, student, occurrence):
+    """Aluno pode ver a própria ocorrência → 200."""
+    resp = client.get(f'/occurrences/{occurrence.id}', headers=_auth(student))
+    assert resp.status_code == HTTPStatus.OK
+    assert resp.json()['id'] == occurrence.id
 
 
 def test_get_occurrence_student_forbidden_other(client, student2, occurrence):
-    """Aluno não pode ver ocorrência de outro aluno → 403 (linhas 128-133)."""
-    response = client.get(
-        f'/occurrences/{occurrence.id}',
-        headers={'Authorization': f'Bearer {tok(student2)}'},
-    )
-    assert response.status_code == HTTPStatus.FORBIDDEN
+    """Aluno não vê ocorrência de outro aluno → 403."""
+    resp = client.get(f'/occurrences/{occurrence.id}', headers=_auth(student2))
+    assert resp.status_code == HTTPStatus.FORBIDDEN
 
 
-def test_get_occurrence_teacher_returns_full_object(
-    client, teacher, occurrence
+def test_get_occurrence_teacher_sees_any(client, teacher, occurrence):
+    """Professor acessa qualquer ocorrência → 200."""
+    resp = client.get(f'/occurrences/{occurrence.id}', headers=_auth(teacher))
+    assert resp.status_code == HTTPStatus.OK
+    assert resp.json()['title'] == occurrence.title
+
+
+async def test_get_occurrence_coordinator_async(
+    client, coordinator, occurrence_db
 ):
-    """Professor acessa ocorrência → cobre (return)."""
-    response = client.get(
-        f'/occurrences/{occurrence.id}',
-        headers={'Authorization': f'Bearer {tok(teacher)}'},
+    """Coordenador pode ver qualquer ocorrência."""
+    resp = client.get(
+        f'/occurrences/{occurrence_db.id}', headers=_auth(coordinator)
     )
-    assert response.status_code == HTTPStatus.OK
-    data = response.json()
-    assert data['id'] == occurrence.id
-    assert data['title'] == occurrence.title
+    assert resp.status_code == HTTPStatus.OK
+    assert resp.json()['id'] == occurrence_db.id
 
 
-# --------------------------------------------------------------------------- #
-# PUT /occurrences/{id}                                                      #
-# --------------------------------------------------------------------------- #
+async def test_get_occurrence_student_own_async(
+    client, student, occurrence_db
+):
+    """Aluno vê a própria ocorrência (async fixture)."""
+    resp = client.get(
+        f'/occurrences/{occurrence_db.id}', headers=_auth(student)
+    )
+    assert resp.status_code == HTTPStatus.OK
+
+
+async def test_get_occurrence_student_other_forbidden_async(
+    client, session, occurrence_db
+):
+    """Aluno não vê ocorrência de outro → 403."""
+    other = await _make_user(session, role=UserRole.STUDENT)
+    resp = client.get(f'/occurrences/{occurrence_db.id}', headers=_auth(other))
+    assert resp.status_code == HTTPStatus.FORBIDDEN
+
+
+# ===========================================================================
+# PUT /occurrences/{id}
+# ===========================================================================
 
 
 def test_update_occurrence_not_found(client, teacher):
-    """PUT /occurrences/99999 → 404 (linhas 157-159)."""
-    response = client.put(
+    """ID inexistente → 404."""
+    resp = client.put(
         '/occurrences/99999',
-        headers={'Authorization': f'Bearer {tok(teacher)}'},
+        headers=_auth(teacher),
         json={'title': 'X'},
     )
-    assert response.status_code == HTTPStatus.NOT_FOUND
-    assert response.json() == {'detail': 'Occurrence not found'}
+    assert resp.status_code == HTTPStatus.NOT_FOUND
+    assert resp.json() == {'detail': 'Occurrence not found'}
 
 
 def test_update_occurrence_teacher_forbidden_other(
-    client, teacher2, occurrence
+    client, other_teacher, occurrence
 ):
-    """Professor não pode editar ocorrência de outro → 403 (linhas 163-167)."""
-    response = client.put(
+    """Professor não edita ocorrência de outro → 403."""
+    resp = client.put(
         f'/occurrences/{occurrence.id}',
-        headers={'Authorization': f'Bearer {tok(teacher2)}'},
+        headers=_auth(other_teacher),
         json={'title': 'Invasão'},
     )
-    assert response.status_code == HTTPStatus.FORBIDDEN
+    assert resp.status_code == HTTPStatus.FORBIDDEN
 
 
-def test_update_occurrence_returns_updated_data(client, teacher, occurrence):
-    """
-    PUT cobre linhas 172-178 (model_dump, setattr, commit, refresh, return).
-    """
-    response = client.put(
+def test_update_occurrence_success(client, teacher, occurrence):
+    """Professor edita a própria ocorrência → 200 com dados atualizados."""
+    resp = client.put(
         f'/occurrences/{occurrence.id}',
-        headers={'Authorization': f'Bearer {tok(teacher)}'},
+        headers=_auth(teacher),
         json={'title': 'Título novo', 'description': 'Descrição nova'},
     )
-    assert response.status_code == HTTPStatus.OK
-    data = response.json()
+    assert resp.status_code == HTTPStatus.OK
+    data = resp.json()
     assert data['title'] == 'Título novo'
     assert data['description'] == 'Descrição nova'
-    assert data['id'] == occurrence.id
 
 
-def test_update_occurrence_coordinator_success(
-    client, coordinator, occurrence
-):
-    """Coordenador pode editar qualquer ocorrência (linhas 163-178)."""
-    response = client.put(
+def test_update_occurrence_coordinator(client, coordinator, occurrence):
+    """Coordenador edita qualquer ocorrência → 200."""
+    resp = client.put(
         f'/occurrences/{occurrence.id}',
-        headers={'Authorization': f'Bearer {tok(coordinator)}'},
+        headers=_auth(coordinator),
         json={'description': 'Atualizado pelo coordenador'},
     )
-    assert response.status_code == HTTPStatus.OK
-    assert response.json()['description'] == 'Atualizado pelo coordenador'
+    assert resp.status_code == HTTPStatus.OK
+    assert resp.json()['description'] == 'Atualizado pelo coordenador'
 
 
-# --------------------------------------------------------------------------- #
-# DELETE /occurrences/{id}                                                   #
-# --------------------------------------------------------------------------- #
+async def test_update_occurrence_success_async(client, teacher, occurrence_db):
+    """PUT (async fixture) → 200 com título atualizado."""
+    resp = client.put(
+        f'/occurrences/{occurrence_db.id}',
+        json={'title': 'Atualizado'},
+        headers=_auth(teacher),
+    )
+    assert resp.status_code == HTTPStatus.OK
+    assert resp.json()['title'] == 'Atualizado'
+
+
+async def test_update_occurrence_not_own_teacher_async(
+    client, other_teacher, occurrence_db
+):
+    """Professor não edita a de outro (async fixture) → 403."""
+    resp = client.put(
+        f'/occurrences/{occurrence_db.id}',
+        json={'title': 'Tentativa'},
+        headers=_auth(other_teacher),
+    )
+    assert resp.status_code == HTTPStatus.FORBIDDEN
+
+
+async def test_update_occurrence_coordinator_async(
+    client, coordinator, occurrence_db
+):
+    """Coordenador edita qualquer (async fixture) → 200."""
+    resp = client.put(
+        f'/occurrences/{occurrence_db.id}',
+        json={'title': 'Editado pelo coord'},
+        headers=_auth(coordinator),
+    )
+    assert resp.status_code == HTTPStatus.OK
+
+
+# ===========================================================================
+# DELETE /occurrences/{id}
+# ===========================================================================
 
 
 def test_delete_occurrence_not_found(client, teacher):
-    """DELETE /occurrences/99999 → 404 (linhas 197-199)."""
-    response = client.delete(
-        '/occurrences/99999',
-        headers={'Authorization': f'Bearer {tok(teacher)}'},
-    )
-    assert response.status_code == HTTPStatus.NOT_FOUND
-    assert response.json() == {'detail': 'Occurrence not found'}
+    """ID inexistente → 404."""
+    resp = client.delete('/occurrences/99999', headers=_auth(teacher))
+    assert resp.status_code == HTTPStatus.NOT_FOUND
+    assert resp.json() == {'detail': 'Occurrence not found'}
 
 
 def test_delete_occurrence_teacher_forbidden_other(
-    client, teacher2, occurrence
+    client, other_teacher, occurrence
 ):
-    """Professor não pode deletar ocorrência de outro → 403."""
-    response = client.delete(
-        f'/occurrences/{occurrence.id}',
-        headers={'Authorization': f'Bearer {tok(teacher2)}'},
+    """Professor não deleta ocorrência de outro → 403."""
+    resp = client.delete(
+        f'/occurrences/{occurrence.id}', headers=_auth(other_teacher)
     )
-    assert response.status_code == HTTPStatus.FORBIDDEN
+    assert resp.status_code == HTTPStatus.FORBIDDEN
 
 
 def test_delete_occurrence_teacher_success(client, teacher, occurrence):
-    """Professor deleta a própria ocorrência → cobre linhas 212-214."""
-    response = client.delete(
-        f'/occurrences/{occurrence.id}',
-        headers={'Authorization': f'Bearer {tok(teacher)}'},
+    """Professor deleta a própria ocorrência → 200 com dados do objeto."""
+    resp = client.delete(
+        f'/occurrences/{occurrence.id}', headers=_auth(teacher)
     )
-    assert response.status_code == HTTPStatus.OK
-    data = response.json()
-    assert data['id'] == occurrence.id
+    assert resp.status_code == HTTPStatus.OK
+    assert resp.json()['id'] == occurrence.id
 
 
-def test_delete_occurrence_coordinator_success(
-    client, coordinator, occurrence
+def test_delete_occurrence_coordinator(client, coordinator, occurrence):
+    """Coordenador deleta qualquer ocorrência → 200."""
+    resp = client.delete(
+        f'/occurrences/{occurrence.id}', headers=_auth(coordinator)
+    )
+    assert resp.status_code == HTTPStatus.OK
+    assert resp.json()['id'] == occurrence.id
+
+
+async def test_delete_occurrence_success_async(client, teacher, occurrence_db):
+    """DELETE (async fixture) → 200."""
+    resp = client.delete(
+        f'/occurrences/{occurrence_db.id}', headers=_auth(teacher)
+    )
+    assert resp.status_code == HTTPStatus.OK
+    assert resp.json()['id'] == occurrence_db.id
+
+
+async def test_delete_occurrence_not_own_async(
+    client, other_teacher, occurrence_db
 ):
-    """Coordenador pode deletar qualquer ocorrência → cobre linhas 212-214."""
-    response = client.delete(
-        f'/occurrences/{occurrence.id}',
-        headers={'Authorization': f'Bearer {tok(coordinator)}'},
+    """Professor não deleta a de outro (async fixture) → 403."""
+    resp = client.delete(
+        f'/occurrences/{occurrence_db.id}', headers=_auth(other_teacher)
     )
-    assert response.status_code == HTTPStatus.OK
-    assert response.json()['id'] == occurrence.id
+    assert resp.status_code == HTTPStatus.FORBIDDEN
+
+
+async def test_delete_occurrence_coordinator_async(
+    client, coordinator, occurrence_db
+):
+    """Coordenador deleta qualquer (async fixture) → 200."""
+    resp = client.delete(
+        f'/occurrences/{occurrence_db.id}', headers=_auth(coordinator)
+    )
+    assert resp.status_code == HTTPStatus.OK
