@@ -153,7 +153,9 @@ O sandbox do Twilio não exige templates aprovados. Use mensagens diretas com os
 
 ### Opção A — Cadastro no primeiro acesso (recomendada)
 
-Adicione o campo `whatsapp_phone` (nullable) na tabela `users`. Após o primeiro login, o sistema exibe um formulário pedindo o número. O responsável preenche voluntariamente — em linha com a LGPD.
+O campo `phone` (nullable, String 20) já existe na tabela `users` — migration `a3f2c1d8e9b0`. Após o primeiro login, o sistema exibe um formulário pedindo o número. O usuário preenche voluntariamente — em linha com a LGPD.
+
+O campo é genérico (`phone`, não `whatsapp_phone`) para servir também a SMS ou chamadas, se necessário no futuro.
 
 ### Opção B — Importar dos CSVs
 
@@ -212,8 +214,8 @@ Para uma escola com 500 alunos, estimativa de volume mensal:
 - [ ] Criar conta Twilio e configurar sandbox
 - [ ] Adicionar variáveis Twilio no `.env`
 - [ ] Instalar SDK (`uv add twilio`)
-- [ ] Adicionar campo `whatsapp_phone` no model `User`
-- [ ] Criar migration para o novo campo
+- [x] Campo `phone` já existe no model `User` (migration `a3f2c1d8e9b0`)
+- [x] Migration já aplicada junto com `avatar_url`
 - [ ] Criar `app/shared/notifications/whatsapp.py`
 - [ ] Criar tela/endpoint para o responsável cadastrar o número
 - [ ] Substituir chamadas de e-mail por WhatsApp (ou paralelizar os dois)

@@ -28,6 +28,7 @@
 - [x] `PermissionChecker` e `role_required` como FastAPI dependencies
 - [x] Helpers `get_user_permissions`, `user_has_permission`, etc.
 - [x] Testes abrangentes
+- [x] `OCCURRENCES_VIEW_OWN_CLASSROOM` e `USER_EDIT_OWN_CLASSROOM` adicionadas ao DT
 
 ### 4. CRUD de Usuários (100%)
 - [x] Create, Read, Update, Delete
@@ -35,6 +36,8 @@
 - [x] Troca de senha com confirmação da senha atual
 - [x] Proteção por permissões
 - [x] Testes completos
+- [x] Upload de avatar (WebP 256×256, máx 2 MB) — próprio usuário e DT para alunos da turma
+- [x] Campo `phone` (opcional) para notificações WhatsApp/SMS
 
 ### 5. Ocorrências — Backend (100%)
 - [x] Model + Schemas + Routers
@@ -193,7 +196,7 @@ O MVP estará pronto para teste piloto quando este fluxo funcionar de ponta a po
 ### Curto Prazo (1–2 meses)
 - [ ] Tela de horários no frontend
 - [ ] Atestados (aluno/responsável submete → DT valida → coordenação aprova)
-- [ ] Notificações WhatsApp (migrar de e-mail)
+- [ ] Notificações WhatsApp (migrar de e-mail) — campo `phone` já existe no model `User`
 - [ ] Dashboard com estatísticas básicas de ocorrências e atrasos
 
 ### Médio Prazo (3–6 meses)
