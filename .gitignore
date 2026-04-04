@@ -1,6 +1,6 @@
 # Cache e Arquivos Não Essenciais
 /edupbl_backend.egg-info
-*.pyc
+**/__pycache__
 .coverage
 backend.zip
 

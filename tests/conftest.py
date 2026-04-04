@@ -18,6 +18,7 @@ from app.shared.db.registry import mapper_registry  # noqa: E402, I001
 # import app.shared.db.models  # noqa: E402, I001
 from app.domains.users.models import User  # noqa: E402, I001
 from app.domains.occurrences.models import Occurrence  # noqa: E402, F401, I001
+from app.domains.delays.models import Delay  # noqa: E402, F401, I001
 from app.domains.schedules.models import (  # noqa: E402, F401, I001
     ScheduleSlot,
     ScheduleOverride,
