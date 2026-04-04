@@ -18,12 +18,30 @@ data/
 │   ├── porteiros.csv
 │   └── responsaveis.csv
 │
+├── seed-images/       # Fotos originais fornecidas por você para o seed
+│   └── foto.jpg       # Ex: referenciado como "foto.jpg" na coluna avatar do CSV
+│
+├── avatars/           # ⚙️ Gerado automaticamente em runtime — NÃO editar
+│   └── {user_id}.webp # Criado pelo seed ou pelo endpoint PATCH /users/me/avatar
+│
 └── horarios/          # CSVs de grade horária (um por turma)
     ├── horario_sala_1.csv   →  1º ano A
-    ├── horario_sala_2.csv   →  1º ano B
-    ├── ...
     └── horario_sala_12.csv  →  3º ano D
 ```
+
+---
+
+## 🖼️ Separação de diretórios de imagens
+
+| Diretório          | O que guarda                        | Quem gerencia   | No Git? |
+|--------------------|-------------------------------------|-----------------|---------|
+| `data/seed-images/`| Fotos originais que você fornece    | Você manualmente | ❌ Nunca |
+| `data/avatars/`    | Avatares processados (256×256 WebP) | Sistema (runtime)| ❌ Nunca |
+
+**Por que separar?**  
+- `seed-images/` contém fotos reais (LGPD) — nunca devem ir ao repositório  
+- `avatars/` é gerado pelo sistema e pode ser recriado a qualquer momento rodando o seed  
+- Avatares enviados via upload pelo próprio usuário também vão para `avatars/`
 
 ---
 
@@ -35,100 +53,79 @@ data/
 - `README.md` — este arquivo
 
 ### ❌ O QUE NUNCA DEVE IR PRO GIT:
-- `*.csv` — CSVs com dados reais (ignorados pelo `.gitignore`)
-- Qualquer arquivo com nomes, e-mails ou senhas reais
+- `*.csv` — CSVs com dados reais
+- `data/avatars/` — avatares processados
+- `data/seed-images/` — fotos originais dos usuários
 
 ---
 
 ## 📋 Formato dos CSVs de Usuários
 
-Todos os CSVs de `usuarios/` seguem o mesmo formato base:
+Todos os CSVs seguem o formato base:
 
 ```csv
-nome,sobrenome,email,senha,role
+nome,sobrenome,email,senha,role,avatar
 ```
 
 **Colunas:**
 - `nome` — Primeiro nome do usuário
 - `sobrenome` — Sobrenome do usuário
 - `email` — E-mail institucional (único)
-- `senha` — Senha temporária inicial
-- `role` — (Opcional) Role do usuário: `student`, `teacher`, `coordinator`, `porter`, `guardian`, `admin`
+- `senha` — Senha temporária inicial (`must_change_password=True`)
+- `role` — (Opcional) Role: `student`, `teacher`, `coordinator`, `porter`, `guardian`, `admin`
+- `avatar` — (Opcional) Nome do arquivo relativo a `data/seed-images/`. Ex: `foto.jpg` ou `turma1/pedro.png`
 
-**Coluna extra para alunos e professores DT:**
-- `sala` — Número da sala de 1 a 12 (ver tabela abaixo)
+**Colunas extras para alunos e professores DT:**
+- `sala` — Número da sala de 1 a 12
+
+### Como referenciar avatares no CSV
+
+```csv
+nome,sobrenome,email,senha,role,avatar
+Ana,Costa,ana@escola.com,Senha!,teacher,ana_costa.jpg
+Pedro,Lima,pedro@escola.com,Senha!,student,turma1/pedro.png
+Maria,Silva,maria@escola.com,Senha!,teacher,
+```
+
+O arquivo `ana_costa.jpg` deve estar em `data/seed-images/ana_costa.jpg`.  
+Deixe a coluna vazia para usuários sem foto.
 
 ### 🏫 Mapeamento de Salas
 
-| Número | Nome |
-|--------|------|
-| 1 | 1º ano A |
-| 2 | 1º ano B |
-| 3 | 1º ano C |
-| 4 | 1º ano D |
-| 5 | 2º ano A |
-| 6 | 2º ano B |
-| 7 | 2º ano C |
-| 8 | 2º ano D |
-| 9 | 3º ano A |
-| 10 | 3º ano B |
-| 11 | 3º ano C |
-| 12 | 3º ano D |
+| Número | Nome     | Número | Nome     |
+|--------|----------|--------|----------|
+| 1      | 1º ano A | 7      | 2º ano C |
+| 2      | 1º ano B | 8      | 2º ano D |
+| 3      | 1º ano C | 9      | 3º ano A |
+| 4      | 1º ano D | 10     | 3º ano B |
+| 5      | 2º ano A | 11     | 3º ano C |
+| 6      | 2º ano B | 12     | 3º ano D |
 
 ### 📁 Arquivos de Usuários
 
-| Arquivo | Role Padrão | is_tutor | Descrição |
-|---------|-------------|----------|-----------|
-| `admins.csv` | `admin` | `false` | Administradores do sistema (devs) |
-| `coordenadores.csv` | `coordinator` | `false` | Coordenadores/Diretoria |
-| `professores.csv` | `teacher` | `false` | Professores normais |
-| `professores_dt.csv` | `teacher` | `true` | Professores Diretores de Turma |
-| `alunos.csv` | `student` | `false` | Alunos das turmas |
-| `porteiros.csv` | `porter` | `false` | Porteiros/Seguranças |
-| `responsaveis.csv` | `guardian` | `false` | Pais/Responsáveis |
-
----
-
-## 📅 Formato dos CSVs de Horário
-
-Cada arquivo em `horarios/` representa a grade semanal de uma turma:
-
-```csv
-email_professor,dia_semana,numero_periodo,tipo,titulo
-```
-
-**Colunas:**
-
-| Coluna | Obrigatório | Descrição |
-|--------|-------------|-----------|
-| `email_professor` | Só para `class_period` | E-mail do professor. Vazio para folga/planejamento/intervalos. |
-| `dia_semana` | Sim | 2=segunda, 3=terça, 4=quarta, 5=quinta, 6=sexta |
-| `numero_periodo` | Não | Número da aula (1–9). Vazio para intervalos e folgas. |
-| `tipo` | Sim | Ver tabela abaixo |
-| `titulo` | Não | Texto exibido. Se vazio, usa o padrão do tipo. |
-
-**Tipos disponíveis:**
-
-| Tipo | Significado | Professor? |
-|------|-------------|------------|
-| `class_period` | Aula normal | ✅ obrigatório |
-| `planning` | Horário de planejamento (fora da sala) | opcional |
-| `free` | Turno de folga (fora da escola) | vazio |
-| `snack_break` | Intervalo de lanche | vazio |
-| `lunch_break` | Intervalo de almoço | vazio |
+| Arquivo              | Role Padrão   | is_tutor | Descrição                       |
+|----------------------|---------------|----------|---------------------------------|
+| `admins.csv`         | `admin`       | `false`  | Administradores do sistema      |
+| `coordenadores.csv`  | `coordinator` | `false`  | Coordenadores/Diretoria         |
+| `professores.csv`    | `teacher`     | `false`  | Professores normais             |
+| `professores_dt.csv` | `teacher`     | `true`   | Professores Diretores de Turma  |
+| `alunos.csv`         | `student`     | `false`  | Alunos das turmas               |
+| `porteiros.csv`      | `porter`      | `false`  | Porteiros/Seguranças            |
+| `responsaveis.csv`   | `guardian`    | `false`  | Pais/Responsáveis               |
 
 ---
 
 ## ▶️ Como Usar
 
-### 1. Preparar CSVs
+### 1. Preparar CSVs e fotos
 
 ```bash
-# Crie os CSVs nas subpastas corretas:
-data/usuarios/professores.csv
+# Coloque as fotos em data/seed-images/
+cp /sua/pasta/fotos/*.jpg data/seed-images/
+
+# Crie os CSVs referenciando os arquivos pelo nome
 data/usuarios/alunos.csv
 data/horarios/horario_sala_1.csv
-# etc.
 ```
 
 ### 2. Importar Usuários
@@ -141,7 +138,6 @@ uv run python scripts/seed_db.py --real
 ### 3. Importar Horários
 
 ```bash
-# Os professores devem estar no banco antes!
 uv run python scripts/seed_db.py --schedules
 ```
 
@@ -151,14 +147,28 @@ uv run python scripts/seed_db.py --schedules
 uv run python scripts/seed_db.py --real --schedules
 ```
 
-O script mostrará quantos registros foram criados, ignorados ou com erro.
+---
+
+## 🌐 Como o front-end acessa os avatares?
+
+O campo `avatar_url` retornado pela API contém apenas uma string como `"avatars/42.webp"`.  
+O front-end deve chamar o endpoint dedicado para obter a imagem:
+
+```
+GET /users/{user_id}/avatar
+```
+
+- Retorna a imagem diretamente como `image/webp`
+- Retorna 404 se o usuário não tiver avatar
+- É público (não exige autenticação) — avatares não são dados sensíveis
+- O front-end só chama quando precisa exibir a imagem (lazy loading)
 
 ---
 
 ## 🔐 Sobre Senhas Temporárias
 
 Todos os usuários importados via CSV são criados com `must_change_password=True`.
-O front-end redireciona automaticamente para troca de senha no primeiro login.
+O front-end redireciona para troca de senha no primeiro login.
 Endpoint: `PATCH /users/me/password`
 
 ---

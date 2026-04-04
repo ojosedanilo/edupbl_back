@@ -1,15 +1,23 @@
 """
-Testes de users/routers.py e users/schemas.py.
+Testes de users/routers.py e users/schemas.py — cobertura 100%.
 
-Endpoints:
-  POST   /users/             — criação
-  GET    /users/             — listagem paginada
-  PUT    /users/{id}         — atualização
-  PATCH  /users/me/password  — troca de senha
-  DELETE /users/{id}         — deleção
+Endpoints cobertos:
+  POST   /users/                    — criação
+  GET    /users/                    — listagem paginada
+  GET    /users/{id}/avatar         — servir avatar
+  PUT    /users/{id}                — atualização
+  PATCH  /users/me/avatar           — upload avatar próprio
+  PATCH  /users/me/password         — troca de senha
+  PATCH  /users/{id}/avatar         — DT faz upload de avatar de aluno
+  PATCH  /users/{id}/profile        — DT edita perfil de aluno
+  PATCH  /users/{id}/deactivate     — desativar usuário
+  DELETE /users/{id}                — deleção + remoção de avatar do disco
 """
 
+import io
 from http import HTTPStatus
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 from pydantic import ValidationError
@@ -183,6 +191,77 @@ async def test_create_and_read_user(client):
 
 
 # ===========================================================================
+# GET /users/{id}/avatar — servir avatar
+# ===========================================================================
+
+
+async def test_get_avatar_user_not_found(client):
+    """GET /users/9999/avatar → 404 user not found."""
+    resp = client.get('/users/9999/avatar')
+    assert resp.status_code == HTTPStatus.NOT_FOUND
+    assert resp.json()['detail'] == 'User not found'
+
+
+async def test_get_avatar_no_avatar_url(client, session):
+    """GET avatar de usuário sem avatar_url → 404 avatar not found."""
+    u = await _make_user(session)
+    assert u.avatar_url is None
+    resp = client.get(f'/users/{u.id}/avatar')
+    assert resp.status_code == HTTPStatus.NOT_FOUND
+    assert resp.json()['detail'] == 'Avatar not found'
+
+
+async def test_get_avatar_file_missing_on_disk(client, session, tmp_path):
+    """GET avatar com avatar_url no banco mas arquivo ausente no disco → 404."""
+    u = await _make_user(session)
+    # Seta avatar_url no banco sem criar o arquivo
+    from sqlalchemy import update
+    from app.domains.users.models import User
+    from app.domains.users import routers as user_routers
+
+    # Patch _AVATAR_DIR para tmp_path (sem criar o arquivo)
+    with patch.object(user_routers, '_AVATAR_DIR', tmp_path):
+        # Força avatar_url no banco
+        u.avatar_url = f'avatars/{u.id}.webp'
+        from app.shared.db.database import get_session
+
+        # Usar a session do teste para atualizar
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        u_fresh = await session.get(User, u.id)
+        u_fresh.avatar_url = f'avatars/{u.id}.webp'
+        await session.commit()
+
+        resp = client.get(f'/users/{u.id}/avatar')
+        assert resp.status_code == HTTPStatus.NOT_FOUND
+        assert resp.json()['detail'] == 'Avatar not found'
+
+
+async def test_get_avatar_success(client, session, tmp_path):
+    """GET avatar existente → 200 com content-type image/webp."""
+    from PIL import Image
+    from app.domains.users.models import User
+    from app.domains.users import routers as user_routers
+
+    u = await _make_user(session)
+
+    # Criar avatar real no tmp_path
+    avatar_file = tmp_path / f'{u.id}.webp'
+    img = Image.new('RGB', (256, 256), color=(100, 150, 200))
+    img.save(avatar_file, format='WEBP')
+
+    # Atualizar avatar_url no banco
+    u_fresh = await session.get(User, u.id)
+    u_fresh.avatar_url = f'avatars/{u.id}.webp'
+    await session.commit()
+
+    with patch.object(user_routers, '_AVATAR_DIR', tmp_path):
+        resp = client.get(f'/users/{u.id}/avatar')
+        assert resp.status_code == HTTPStatus.OK
+        assert resp.headers['content-type'] == 'image/webp'
+
+
+# ===========================================================================
 # PUT /users/{id} — atualização
 # ===========================================================================
 
@@ -311,6 +390,111 @@ async def test_update_user_own_email_no_conflict(client, session):
 
 
 # ===========================================================================
+# PATCH /users/me/avatar — upload de avatar (próprio usuário)
+# ===========================================================================
+
+
+def _make_webp_bytes() -> bytes:
+    """Gera bytes de imagem WebP 10×10 válida para testes."""
+    buf = io.BytesIO()
+    from PIL import Image
+
+    img = Image.new('RGB', (10, 10), color=(255, 0, 0))
+    img.save(buf, format='WEBP')
+    return buf.getvalue()
+
+
+def _make_png_bytes() -> bytes:
+    """Gera bytes de imagem PNG 10×10 válida para testes."""
+    buf = io.BytesIO()
+    from PIL import Image
+
+    img = Image.new('RGB', (10, 10), color=(0, 255, 0))
+    img.save(buf, format='PNG')
+    return buf.getvalue()
+
+
+def _make_rgba_png_bytes() -> bytes:
+    """Gera bytes de imagem PNG RGBA para testar conversão."""
+    buf = io.BytesIO()
+    from PIL import Image
+
+    img = Image.new('RGBA', (10, 10), color=(0, 0, 255, 128))
+    img.save(buf, format='PNG')
+    return buf.getvalue()
+
+
+async def test_upload_my_avatar_success(client, session, tmp_path):
+    """PATCH /users/me/avatar com imagem válida → 200 e avatar_url atualizado."""
+    from app.domains.users import routers as user_routers
+
+    u = await _make_user(session)
+    webp_bytes = _make_webp_bytes()
+
+    with patch.object(user_routers, '_AVATAR_DIR', tmp_path):
+        resp = client.patch(
+            '/users/me/avatar',
+            headers=_auth(u),
+            files={'file': ('avatar.webp', webp_bytes, 'image/webp')},
+        )
+    assert resp.status_code == HTTPStatus.OK
+    assert resp.json()['avatar_url'] is not None
+
+
+async def test_upload_my_avatar_png_rgba(client, session, tmp_path):
+    """PATCH /users/me/avatar com PNG RGBA → conversão para RGB → 200."""
+    from app.domains.users import routers as user_routers
+
+    u = await _make_user(session)
+    rgba_bytes = _make_rgba_png_bytes()
+
+    with patch.object(user_routers, '_AVATAR_DIR', tmp_path):
+        resp = client.patch(
+            '/users/me/avatar',
+            headers=_auth(u),
+            files={'file': ('avatar.png', rgba_bytes, 'image/png')},
+        )
+    assert resp.status_code == HTTPStatus.OK
+
+
+async def test_upload_my_avatar_wrong_mime(client, session):
+    """PATCH /users/me/avatar com MIME inválido → 422."""
+    u = await _make_user(session)
+    resp = client.patch(
+        '/users/me/avatar',
+        headers=_auth(u),
+        files={'file': ('doc.pdf', b'%PDF-1.4', 'application/pdf')},
+    )
+    assert resp.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert 'Tipo de arquivo não suportado' in resp.json()['detail']
+
+
+async def test_upload_my_avatar_too_large(client, session):
+    """PATCH /users/me/avatar com arquivo > 2 MB → 413."""
+    u = await _make_user(session)
+    big_bytes = b'x' * (2 * 1024 * 1024 + 1)
+    resp = client.patch(
+        '/users/me/avatar',
+        headers=_auth(u),
+        files={'file': ('big.webp', big_bytes, 'image/webp')},
+    )
+    assert resp.status_code == HTTPStatus.REQUEST_ENTITY_TOO_LARGE
+    assert 'muito grande' in resp.json()['detail']
+
+
+async def test_upload_my_avatar_invalid_image_bytes(client, session):
+    """PATCH /users/me/avatar com bytes que não são imagem → 422."""
+    u = await _make_user(session)
+    resp = client.patch(
+        '/users/me/avatar',
+        headers=_auth(u),
+        files={'file': ('corrupt.webp', b'not-an-image', 'image/webp')},
+    )
+    assert resp.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert 'processar a imagem' in resp.json()['detail']
+
+
+# ===========================================================================
 # PATCH /users/me/password
 # ===========================================================================
 
@@ -365,6 +549,346 @@ async def test_change_password_success_async(client, session):
 
 
 # ===========================================================================
+# PATCH /users/{id}/avatar — DT faz upload de avatar de aluno
+# ===========================================================================
+
+
+async def test_dt_upload_student_avatar_success(client, session, tmp_path):
+    """DT faz upload de avatar de aluno da sua turma → 200."""
+    from app.domains.users.models import Classroom
+    from app.domains.users import routers as user_routers
+
+    classroom = Classroom(name='Turma X')
+    session.add(classroom)
+    await session.flush()
+
+    dt = await _make_user(
+        session,
+        role=UserRole.TEACHER,
+        is_tutor=True,
+        classroom_id=classroom.id,
+    )
+    student = await _make_user(
+        session,
+        role=UserRole.STUDENT,
+        classroom_id=classroom.id,
+    )
+
+    webp_bytes = _make_webp_bytes()
+    with patch.object(user_routers, '_AVATAR_DIR', tmp_path):
+        resp = client.patch(
+            f'/users/{student.id}/avatar',
+            headers=_auth(dt),
+            files={'file': ('avatar.webp', webp_bytes, 'image/webp')},
+        )
+    assert resp.status_code == HTTPStatus.OK
+    assert resp.json()['avatar_url'] is not None
+
+
+async def test_dt_upload_avatar_user_not_found(client, session):
+    """DT tenta fazer upload de avatar de usuário inexistente → 404."""
+    dt = await _make_user(session, role=UserRole.TEACHER, is_tutor=True)
+    webp_bytes = _make_webp_bytes()
+    resp = client.patch(
+        '/users/9999/avatar',
+        headers=_auth(dt),
+        files={'file': ('avatar.webp', webp_bytes, 'image/webp')},
+    )
+    assert resp.status_code == HTTPStatus.NOT_FOUND
+    assert resp.json()['detail'] == 'User not found'
+
+
+async def test_dt_upload_avatar_not_student(client, session):
+    """DT tenta fazer upload de avatar de não-aluno → 422."""
+    from app.domains.users.models import Classroom
+
+    classroom = Classroom(name='Turma Y')
+    session.add(classroom)
+    await session.flush()
+
+    dt = await _make_user(
+        session,
+        role=UserRole.TEACHER,
+        is_tutor=True,
+        classroom_id=classroom.id,
+    )
+    teacher2 = await _make_user(
+        session, role=UserRole.TEACHER, classroom_id=classroom.id
+    )
+
+    webp_bytes = _make_webp_bytes()
+    resp = client.patch(
+        f'/users/{teacher2.id}/avatar',
+        headers=_auth(dt),
+        files={'file': ('avatar.webp', webp_bytes, 'image/webp')},
+    )
+    assert resp.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert 'avatares de alunos' in resp.json()['detail']
+
+
+async def test_dt_upload_avatar_wrong_classroom(client, session):
+    """DT tenta fazer upload de avatar de aluno de outra turma → 403."""
+    from app.domains.users.models import Classroom
+
+    c1 = Classroom(name='Turma DT1')
+    c2 = Classroom(name='Turma DT2')
+    session.add_all([c1, c2])
+    await session.flush()
+
+    dt = await _make_user(
+        session, role=UserRole.TEACHER, is_tutor=True, classroom_id=c1.id
+    )
+    student = await _make_user(
+        session, role=UserRole.STUDENT, classroom_id=c2.id
+    )
+
+    webp_bytes = _make_webp_bytes()
+    resp = client.patch(
+        f'/users/{student.id}/avatar',
+        headers=_auth(dt),
+        files={'file': ('avatar.webp', webp_bytes, 'image/webp')},
+    )
+    assert resp.status_code == HTTPStatus.FORBIDDEN
+    assert 'turma' in resp.json()['detail']
+
+
+async def test_non_dt_cannot_upload_student_avatar(client, session):
+    """Professor sem is_tutor não tem permissão → 403."""
+    from app.domains.users.models import Classroom
+
+    classroom = Classroom(name='Turma Z')
+    session.add(classroom)
+    await session.flush()
+
+    teacher = await _make_user(
+        session,
+        role=UserRole.TEACHER,
+        is_tutor=False,
+        classroom_id=classroom.id,
+    )
+    student = await _make_user(
+        session, role=UserRole.STUDENT, classroom_id=classroom.id
+    )
+
+    webp_bytes = _make_webp_bytes()
+    resp = client.patch(
+        f'/users/{student.id}/avatar',
+        headers=_auth(teacher),
+        files={'file': ('avatar.webp', webp_bytes, 'image/webp')},
+    )
+    assert resp.status_code == HTTPStatus.FORBIDDEN
+
+
+# ===========================================================================
+# PATCH /users/{id}/profile — DT edita perfil de aluno
+# ===========================================================================
+
+
+async def test_dt_update_student_profile_success(client, session):
+    """DT atualiza perfil de aluno da turma → 200."""
+    from app.domains.users.models import Classroom
+
+    classroom = Classroom(name='Turma P1')
+    session.add(classroom)
+    await session.flush()
+
+    dt = await _make_user(
+        session,
+        role=UserRole.TEACHER,
+        is_tutor=True,
+        classroom_id=classroom.id,
+    )
+    student = await _make_user(
+        session, role=UserRole.STUDENT, classroom_id=classroom.id
+    )
+
+    resp = client.patch(
+        f'/users/{student.id}/profile',
+        headers=_auth(dt),
+        json={'avatar_url': None},
+    )
+    assert resp.status_code == HTTPStatus.OK
+
+
+async def test_dt_update_profile_user_not_found(client, session):
+    """DT tenta editar perfil de usuário inexistente → 404."""
+    dt = await _make_user(session, role=UserRole.TEACHER, is_tutor=True)
+    resp = client.patch(
+        '/users/9999/profile',
+        headers=_auth(dt),
+        json={'avatar_url': None},
+    )
+    assert resp.status_code == HTTPStatus.NOT_FOUND
+    assert resp.json()['detail'] == 'User not found'
+
+
+async def test_dt_update_profile_not_student(client, session):
+    """DT tenta editar perfil de não-aluno → 422."""
+    from app.domains.users.models import Classroom
+
+    classroom = Classroom(name='Turma P2')
+    session.add(classroom)
+    await session.flush()
+
+    dt = await _make_user(
+        session,
+        role=UserRole.TEACHER,
+        is_tutor=True,
+        classroom_id=classroom.id,
+    )
+    teacher2 = await _make_user(
+        session, role=UserRole.TEACHER, classroom_id=classroom.id
+    )
+
+    resp = client.patch(
+        f'/users/{teacher2.id}/profile',
+        headers=_auth(dt),
+        json={'avatar_url': None},
+    )
+    assert resp.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert 'perfil de alunos' in resp.json()['detail']
+
+
+async def test_dt_update_profile_wrong_classroom(client, session):
+    """DT tenta editar perfil de aluno de outra turma → 403."""
+    from app.domains.users.models import Classroom
+
+    c1 = Classroom(name='Turma P3')
+    c2 = Classroom(name='Turma P4')
+    session.add_all([c1, c2])
+    await session.flush()
+
+    dt = await _make_user(
+        session, role=UserRole.TEACHER, is_tutor=True, classroom_id=c1.id
+    )
+    student = await _make_user(
+        session, role=UserRole.STUDENT, classroom_id=c2.id
+    )
+
+    resp = client.patch(
+        f'/users/{student.id}/profile',
+        headers=_auth(dt),
+        json={'avatar_url': None},
+    )
+    assert resp.status_code == HTTPStatus.FORBIDDEN
+    assert 'turma' in resp.json()['detail']
+
+
+# ===========================================================================
+# PATCH /users/{id}/deactivate — desativar usuário
+# ===========================================================================
+
+
+async def test_deactivate_user_success(client, session):
+    """Admin desativa outro usuário → 200 e is_active = False."""
+    from app.domains.users.models import User as UserModel
+
+    admin = await _make_user(session, role=UserRole.ADMIN)
+    target = await _make_user(session)
+
+    resp = client.patch(
+        f'/users/{target.id}/deactivate',
+        headers=_auth(admin),
+    )
+    assert resp.status_code == HTTPStatus.OK
+    assert resp.json() == {'message': 'User deactivated successfully'}
+
+    # Verifica no banco que is_active virou False
+    from sqlalchemy import select
+
+    refreshed = await session.scalar(
+        select(UserModel).where(UserModel.id == target.id)
+    )
+    assert refreshed.is_active is False
+
+
+async def test_deactivate_self_not_allowed(client, session):
+    """Usuário tenta desativar a si mesmo → 422."""
+    admin = await _make_user(session, role=UserRole.ADMIN)
+    resp = client.patch(
+        f'/users/{admin.id}/deactivate',
+        headers=_auth(admin),
+    )
+    assert resp.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert 'si mesmo' in resp.json()['detail']
+
+
+async def test_deactivate_user_not_found(client, session):
+    """Admin tenta desativar usuário inexistente → 404."""
+    admin = await _make_user(session, role=UserRole.ADMIN)
+    resp = client.patch(
+        '/users/9999/deactivate',
+        headers=_auth(admin),
+    )
+    assert resp.status_code == HTTPStatus.NOT_FOUND
+    assert resp.json()['detail'] == 'User not found'
+
+
+async def test_deactivate_already_inactive(client, session):
+    """Admin tenta desativar usuário já inativo → 409 Conflict."""
+    admin = await _make_user(session, role=UserRole.ADMIN)
+    target = await _make_user(session, is_active=False)
+
+    resp = client.patch(
+        f'/users/{target.id}/deactivate',
+        headers=_auth(admin),
+    )
+    assert resp.status_code == HTTPStatus.CONFLICT
+    assert 'já está desativado' in resp.json()['detail']
+
+
+async def test_deactivate_requires_permission(client, session):
+    """Professor comum não tem USER_DELETE → 403."""
+    teacher = await _make_user(session, role=UserRole.TEACHER)
+    target = await _make_user(session)
+
+    resp = client.patch(
+        f'/users/{target.id}/deactivate',
+        headers=_auth(teacher),
+    )
+    assert resp.status_code == HTTPStatus.FORBIDDEN
+
+
+async def test_coordinator_can_deactivate(client, session):
+    """Coordinator tem USER_DELETE → consegue desativar → 200."""
+    coord = await _make_user(session, role=UserRole.COORDINATOR)
+    target = await _make_user(session)
+
+    resp = client.patch(
+        f'/users/{target.id}/deactivate',
+        headers=_auth(coord),
+    )
+    assert resp.status_code == HTTPStatus.OK
+
+
+async def test_deactivate_preserves_avatar_on_disk(client, session, tmp_path):
+    """Desativar NÃO remove arquivo de avatar do disco."""
+    from app.domains.users import routers as user_routers
+    from app.domains.users.models import User as UserModel
+    from PIL import Image
+
+    admin = await _make_user(session, role=UserRole.ADMIN)
+    target = await _make_user(session)
+
+    # Cria avatar fake no tmp_path
+    avatar_file = tmp_path / f'{target.id}.webp'
+    Image.new('RGB', (256, 256)).save(avatar_file, format='WEBP')
+
+    t = await session.get(UserModel, target.id)
+    t.avatar_url = f'avatars/{target.id}.webp'
+    await session.commit()
+
+    with patch.object(user_routers, '_AVATAR_DIR', tmp_path):
+        resp = client.patch(
+            f'/users/{target.id}/deactivate',
+            headers=_auth(admin),
+        )
+
+    assert resp.status_code == HTTPStatus.OK
+    assert avatar_file.exists(), 'Avatar deve ser preservado ao desativar'
+
+
+# ===========================================================================
 # DELETE /users/{id}
 # ===========================================================================
 
@@ -398,6 +922,45 @@ async def test_delete_user_self_async(client, session):
     resp = client.delete(f'/users/{u.id}', headers=_auth(u))
     assert resp.status_code == HTTPStatus.OK
     assert resp.json() == {'message': 'User deleted'}
+
+
+async def test_delete_user_removes_avatar_from_disk(client, session, tmp_path):
+    """DELETE remove o arquivo de avatar do disco."""
+    from app.domains.users import routers as user_routers
+    from app.domains.users.models import User as UserModel
+    from PIL import Image
+
+    u = await _make_user(session)
+
+    # Cria avatar fake no tmp_path
+    avatar_file = tmp_path / f'{u.id}.webp'
+    Image.new('RGB', (256, 256)).save(avatar_file, format='WEBP')
+    assert avatar_file.exists()
+
+    u_fresh = await session.get(UserModel, u.id)
+    u_fresh.avatar_url = f'avatars/{u.id}.webp'
+    await session.commit()
+
+    with patch.object(user_routers, '_AVATAR_DIR', tmp_path):
+        resp = client.delete(f'/users/{u.id}', headers=_auth(u))
+
+    assert resp.status_code == HTTPStatus.OK
+    assert not avatar_file.exists(), (
+        'Avatar deve ser removido do disco ao deletar usuário'
+    )
+
+
+async def test_delete_user_no_avatar_no_error(client, session, tmp_path):
+    """DELETE de usuário sem avatar → não gera erro mesmo sem arquivo no disco."""
+    from app.domains.users import routers as user_routers
+
+    u = await _make_user(session)
+    # Não cria nenhum arquivo de avatar
+
+    with patch.object(user_routers, '_AVATAR_DIR', tmp_path):
+        resp = client.delete(f'/users/{u.id}', headers=_auth(u))
+
+    assert resp.status_code == HTTPStatus.OK
 
 
 # ===========================================================================

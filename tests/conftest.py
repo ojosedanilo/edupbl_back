@@ -73,7 +73,37 @@ async def engine():
 @pytest_asyncio.fixture(loop_scope='function')
 async def session(engine):
     async with AsyncSession(engine, expire_on_commit=False) as _session:
-        yield _session
+        _committing = False
+
+        original_commit = _session.commit
+
+        async def _tracked_commit():
+            nonlocal _committing
+            _committing = True
+            try:
+                await original_commit()
+            finally:
+                _committing = False
+
+        _session.commit = _tracked_commit  # type: ignore[method-assign]
+
+        def _expunge_on_external_commit(conn):
+            # Limpa o identity map apenas quando o commit veio de outra sessão
+            # (ex: o client durante um request), não da própria sessão do teste.
+            if not _committing:
+                _session.expunge_all()
+
+        from sqlalchemy import event as sa_event
+
+        sa_event.listen(
+            engine.sync_engine, 'commit', _expunge_on_external_commit
+        )
+        try:
+            yield _session
+        finally:
+            sa_event.remove(
+                engine.sync_engine, 'commit', _expunge_on_external_commit
+            )
 
 
 @pytest_asyncio.fixture(loop_scope='function')

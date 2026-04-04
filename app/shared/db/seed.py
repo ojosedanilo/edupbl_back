@@ -44,6 +44,7 @@ async def seed_classrooms(session: AsyncSession) -> dict[int, int]:
             classroom = Classroom(name=nome)
             session.add(classroom)
             await session.flush()  # garante que o id seja gerado
+            await session.refresh(classroom)  # popula classroom.id após flush
             id_map[numero] = classroom.id
 
     await session.commit()
@@ -115,6 +116,66 @@ async def _gerar_username_unico(
 
     usados_no_lote.add(candidato)
     return candidato
+
+
+# ---------------------------------------------------------------------------
+# Importação de avatar a partir do CSV
+# ---------------------------------------------------------------------------
+
+# Raiz do projeto (4 níveis acima de app/shared/db/seed.py)
+DATA_DIR = Path(__file__).parent.parent.parent.parent / 'data'
+USUARIOS_DIR = DATA_DIR / 'usuarios'
+
+# Imagens fornecidas pelo usuário para o seed ficam em data/seed-images/.
+# NÃO confundir com data/avatars/ (gerado pelo sistema em runtime).
+SEED_IMAGES_DIR = DATA_DIR / 'seed-images'
+
+
+def _import_avatar(user_id: int, avatar_filename: str) -> str | None:
+    """
+    Copia e redimensiona o avatar indicado no CSV para data/avatars/.
+
+    avatar_filename é o nome do arquivo relativo a data/seed-images/
+    (ex: 'joao.jpg' ou 'turma1/pedro.png').
+
+    Se o arquivo não existir, loga um aviso e retorna None sem abortar
+    a importação do usuário.
+
+    Retorna o caminho relativo salvo no banco (ex: 'avatars/42.webp').
+    """
+    from PIL import (
+        Image,
+    )  # import local — Pillow pode não estar em todos os envs
+
+    from app.domains.users.routers import _AVATAR_DIR, _AVATAR_SIZE
+
+    src = SEED_IMAGES_DIR / avatar_filename.strip()
+    if not src.exists():
+        print(
+            f'  ⚠️  Avatar não encontrado: {src} — campo avatar_url ignorado.'
+        )
+        return None
+
+    try:
+        _AVATAR_DIR.mkdir(parents=True, exist_ok=True)
+        img = Image.open(src)
+        if img.mode in ('RGBA', 'P'):
+            img = img.convert('RGB')
+        w, h = img.size
+        side = min(w, h)
+        img = img.crop((
+            (w - side) // 2,
+            (h - side) // 2,
+            (w + side) // 2,
+            (h + side) // 2,
+        ))
+        img = img.resize((_AVATAR_SIZE, _AVATAR_SIZE), Image.LANCZOS)
+        dest = _AVATAR_DIR / f'{user_id}.webp'
+        img.save(dest, format='WEBP', quality=85)
+        return f'avatars/{user_id}.webp'
+    except Exception as e:
+        print(f'  ⚠️  Erro ao processar avatar {src}: {e} — ignorado.')
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -236,9 +297,6 @@ async def seed_test_users(session: AsyncSession):
 # Seed de produção (usuários reais via CSV)
 # ---------------------------------------------------------------------------
 
-DATA_DIR = Path(__file__).parent.parent.parent.parent / 'data'
-USUARIOS_DIR = DATA_DIR / 'usuarios'
-
 # (nome_arquivo, role_padrão, is_tutor, usa_campo_sala)
 CSV_CONFIG = [
     ('admins.csv', UserRole.ADMIN, False, False),
@@ -256,11 +314,9 @@ async def seed_real_users(session: AsyncSession):  # noqa: PLR0914
 
     print('\n📦 Carregando dados existentes do banco...')
 
-    # 🔥 1. Carrega tudo de uma vez
     existing_emails = set(
         (await session.execute(select(User.email))).scalars().all()
     )
-
     existing_usernames = set(
         (await session.execute(select(User.username))).scalars().all()
     )
@@ -277,11 +333,14 @@ async def seed_real_users(session: AsyncSession):  # noqa: PLR0914
 
         print(f'\n📄 Processando: {filename}')
 
-        novos_usuarios = []
+        novos_sem_avatar: list[User] = []
+        novos_com_avatar: list[
+            tuple[User, str]
+        ] = []  # (user, avatar_filename)
         erros = 0
 
         with open(filepath, encoding='utf-8') as f:
-            reader = list(csv.DictReader(f))  # 🔥 carrega tudo
+            reader = list(csv.DictReader(f))
 
         for linha, row in enumerate(reader, start=2):
             try:
@@ -290,25 +349,21 @@ async def seed_real_users(session: AsyncSession):  # noqa: PLR0914
                 email = row['email'].strip().lower()
                 senha = row['senha'].strip()
 
-                # 🔥 idempotência sem query
                 if email in existing_emails:
                     continue
 
                 role_str = row.get('role', '').strip()
                 role = UserRole(role_str) if role_str else default_role
 
-                # Sala
                 classroom_id = None
                 if usa_sala:
                     sala = row.get('sala', '').strip()
                     if sala:
                         classroom_id = classroom_map.get(int(sala))
 
-                # 🔥 username sem query
                 base = _base_username(nome, sobrenome)
                 username = base
                 i = 1
-
                 while (
                     username in existing_usernames
                     or username in usados_no_lote
@@ -328,23 +383,61 @@ async def seed_real_users(session: AsyncSession):  # noqa: PLR0914
                     role=role,
                     is_tutor=default_is_tutor,
                     is_active=True,
-                    classroom_id=classroom_id,
                     must_change_password=True,
                 )
+                # classroom_id precisa ser setado após o objeto ser persistido:
+                # com mapped_as_dataclass o __init__ inicializa classroom=None
+                # por último, o que sobrescreve classroom_id passado ao construtor.
+                # Salva o valor para aplicar via setattr após o flush.
+                _classroom_id = classroom_id
 
-                novos_usuarios.append(user)
+                # Coluna 'avatar' opcional — nome do arquivo relativo a
+                # data/seed-images/ (ex: 'joao.jpg' ou 'turma1/pedro.png').
+                # Deixe vazio (ou omita a coluna) para não importar avatar.
+                avatar_filename = row.get('avatar', '').strip()
+                if avatar_filename:
+                    novos_com_avatar.append((
+                        user,
+                        _classroom_id,
+                        avatar_filename,
+                    ))
+                else:
+                    novos_sem_avatar.append((user, _classroom_id))
+
                 existing_emails.add(email)
                 total_criados += 1
 
-            except Exception:
+            except Exception as exc:
+                print(f'  ⚠️  Linha {linha}: {exc}')
                 erros += 1
 
-        # 🔥 batch insert (sem savepoint por linha)
-        if novos_usuarios:
-            session.add_all(novos_usuarios)
+        # Batch insert dos usuários sem avatar.
+        # classroom_id é aplicado via setattr após flush porque mapped_as_dataclass
+        # inicializa classroom=None por último no __init__, sobrescrevendo o valor
+        # passado ao construtor (ver comentário em conftest._make_user).
+        if novos_sem_avatar:
+            for user, cid in novos_sem_avatar:
+                session.add(user)
+                await session.flush()
+                if cid is not None:
+                    user.classroom_id = cid
             await session.commit()
 
-        print(f'  ✅ {len(novos_usuarios)} usuários criados')
+        # Usuários com avatar: flush individual para obter o id antes de
+        # processar o arquivo de imagem, depois commit em lote.
+        if novos_com_avatar:
+            for user, cid, avatar_filename in novos_com_avatar:
+                session.add(user)
+                await session.flush()
+                if cid is not None:
+                    user.classroom_id = cid
+                avatar_url = _import_avatar(user.id, avatar_filename)
+                if avatar_url:
+                    user.avatar_url = avatar_url
+            await session.commit()
+
+        criados = len(novos_sem_avatar) + len(novos_com_avatar)
+        print(f'  ✅ {criados} usuários criados')
         if erros:
             print(f'  ⚠️  {erros} erro(s)')
 

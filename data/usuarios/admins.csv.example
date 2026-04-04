@@ -1,3 +1,3 @@
-nome,sobrenome,email,senha,role
-Jose,Danilo,jose.danilo@edupbl.com,AdminDev2024!,admin
-Professor,Nome,professor.nome@edupbl.com,AdminDev2024!,admin
+nome,sobrenome,email,senha,role,avatar
+Jose,Danilo,jose.danilo@edupbl.com,AdminDev2024!,admin,
+Professor,Nome,professor.nome@edupbl.com,AdminDev2024!,admin,

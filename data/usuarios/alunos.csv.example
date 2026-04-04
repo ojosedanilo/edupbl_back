@@ -1,5 +1,5 @@
-nome,sobrenome,email,senha,role,sala
-Pedro,Lima,pedro.lima@escola.com,Aluno2024!,student,1
-Lucia,Ferreira,lucia.ferreira@escola.com,Aluno2024!,student,1
-Rafael,Oliveira,rafael.oliveira@escola.com,Aluno2024!,student,5
-Beatriz,Martins,beatriz.martins@escola.com,Aluno2024!,student,9
+nome,sobrenome,email,senha,role,sala,avatar
+Pedro,Lima,pedro.lima@escola.com,Aluno2024!,student,1,
+Lucia,Ferreira,lucia.ferreira@escola.com,Aluno2024!,student,1,lucia.webp
+Rafael,Oliveira,rafael.oliveira@escola.com,Aluno2024!,student,5,
+Beatriz,Martins,beatriz.martins@escola.com,Aluno2024!,student,9,

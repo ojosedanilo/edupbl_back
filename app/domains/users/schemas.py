@@ -2,13 +2,14 @@
 Schemas Pydantic do domínio de usuários.
 
 Hierarquia:
-  UserSchema     → criação de usuário (todos os campos)
-  UserUpdate     → atualização parcial (campos opcionais)
-  UserPublic     → resposta da API (sem senha)
+  UserSchema          → criação de usuário (todos os campos)
+  UserUpdate          → atualização parcial pelo próprio usuário
+  StudentProfileUpdate → campos que o DT pode editar em alunos da turma
+  UserPublic          → resposta da API (sem senha)
   UserWithPermissions → UserPublic + conjunto de permissões
-  PasswordChange → troca de senha com confirmação
-  UserList       → wrapper de lista paginada
-  FilterPage     → parâmetros de paginação (offset/limit)
+  PasswordChange      → troca de senha com confirmação
+  UserList            → wrapper de lista paginada
+  FilterPage          → parâmetros de paginação (offset/limit)
 """
 
 import re
@@ -63,6 +64,7 @@ class UserUpdate(BaseModel):
     password: str | None = None
     first_name: str | None = None
     last_name: str | None = None
+    phone: str | None = None
     is_tutor: bool | None = None
     is_active: bool | None = None
     classroom_id: int | None = None
@@ -87,6 +89,8 @@ class UserPublic(BaseModel):
     is_active: bool
     classroom_id: int | None
     must_change_password: bool
+    avatar_url: str | None
+    phone: str | None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -95,6 +99,18 @@ class UserWithPermissions(UserPublic):
     """UserPublic acrescido do conjunto de permissões calculadas da role."""
 
     permissions: set[SystemPermissions]
+
+
+class StudentProfileUpdate(BaseModel):
+    """
+    Campos que o Professor DT pode editar em alunos da própria turma.
+
+    Escopo intencional restrito: o DT não deve alterar dados de autenticação
+    (email, senha, username) nem dados administrativos (role, is_active) de
+    alunos. Apenas informações de perfil que ele naturalmente gerencia.
+    """
+
+    avatar_url: str | None = None
 
 
 class PasswordChange(BaseModel):

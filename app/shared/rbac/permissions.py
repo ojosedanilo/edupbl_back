@@ -59,6 +59,9 @@ class SystemPermissions(str, Enum):
         'occurrences:read_child'  # Ocorrências do(s) filho(s)
     )
     OCCURRENCES_VIEW_OWN = 'occurrences:read_own'  # Criei OU sou o aluno
+    OCCURRENCES_VIEW_OWN_CLASSROOM = (
+        'occurrences:read_own_classroom'  # Todas as ocorrências da minha turma (DT)
+    )
 
     # ── Relatórios ─────────────────────────────────────────────────── #
     REPORTS_VIEW_ALL = 'reports:view_all'  # Relatórios de todas as turmas
@@ -75,6 +78,7 @@ class SystemPermissions(str, Enum):
     USER_CREATE = 'users:create'
     USER_DELETE = 'users:delete'
     USER_EDIT = 'users:update'
+    USER_EDIT_OWN_CLASSROOM = 'users:update_own_classroom'  # DT edita alunos da própria turma (apenas campos permitidos)
     USER_VIEW_ALL = 'users:read_all'  # Todos os usuários
     USER_VIEW_CHILD = 'users:read_child'  # Informações do(s) filho(s)
     USER_VIEW_OWN = 'users:read_own'  # Próprias informações
@@ -129,7 +133,9 @@ ROLE_PERMISSIONS: dict[UserRole, set[SystemPermissions]] = {
 TUTOR_EXTRA_PERMISSIONS: set[SystemPermissions] = {
     SystemPermissions.CERTIFICATES_VALIDATE,
     SystemPermissions.DELAYS_VIEW_OWN_CLASSROOM,
+    SystemPermissions.OCCURRENCES_VIEW_OWN_CLASSROOM,  # Ver todas as ocorrências da própria turma
     SystemPermissions.REPORTS_VIEW_OWN_CLASSROOM,
+    SystemPermissions.USER_EDIT_OWN_CLASSROOM,  # Editar campos permitidos de alunos da própria turma
 }
 
 # Permissões base concedidas a TODOS os usuários, independentemente da role

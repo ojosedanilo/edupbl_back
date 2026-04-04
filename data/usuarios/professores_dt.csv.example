@@ -1,3 +1,3 @@
-nome,sobrenome,email,senha,role,sala
-Carlos,Diretor,carlos.dt@escola.com,ProfDT2024!,teacher,1
-Fernanda,Tutora,fernanda.dt@escola.com,ProfDT2024!,teacher,5
+nome,sobrenome,email,senha,role,sala,avatar
+Carlos,Diretor,carlos.dt@escola.com,ProfDT2024!,teacher,1,
+Fernanda,Tutora,fernanda.dt@escola.com,ProfDT2024!,teacher,5,fernanda.png

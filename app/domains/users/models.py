@@ -137,6 +137,25 @@ class User:
         nullable=True,
     )
 
+    # ── Perfil / Contato ───────────────────────────────────────────── #
+    # Caminho relativo ao avatar salvo em disco (ex: 'avatars/42.jpg').
+    # NULL significa sem foto — o frontend exibe iniciais ou placeholder.
+    # O arquivo é redimensionado para 256×256 px no upload antes de salvar.
+    avatar_url: Mapped[str | None] = mapped_column(
+        String(255),
+        default=None,
+        nullable=True,
+    )
+
+    # Telefone do usuário (ex: '+5585999990000') — usado para notificações WhatsApp/SMS.
+    # Preenchido voluntariamente após o primeiro login (LGPD).
+    # NULL significa que notificações só vão por e-mail.
+    phone: Mapped[str | None] = mapped_column(
+        String(20),
+        default=None,
+        nullable=True,
+    )
+
     # ── Metadados ──────────────────────────────────────────────────── #
     created_at: Mapped[datetime] = mapped_column(
         init=False, server_default=func.now()

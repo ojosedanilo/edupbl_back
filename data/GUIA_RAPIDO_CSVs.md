@@ -16,6 +16,12 @@ data/
 │   ├── alunos.csv
 │   ├── porteiros.csv
 │   └── responsaveis.csv
+├── avatars/           ← gerado automaticamente pelo seed/upload
+│   ├── 1.webp
+│   ├── 2.webp
+│   └── ...
+├── fotos/             ← opcional: coloque aqui as fotos originais antes do import
+│   └── alunos/
 └── horarios/
     ├── horario_sala_1.csv
     ├── horario_sala_2.csv
@@ -61,22 +67,28 @@ Ana,Costa,ana.costa@escola.com,Prof2024!,teacher
 ### 4. `professores_dt.csv` — Professores Diretores de Turma
 
 ```csv
-nome,sobrenome,email,senha,role,sala
-Carlos,Diretor,carlos.dt@escola.com,ProfDT2024!,teacher,1
-Fernanda,Tutora,fernanda.dt@escola.com,ProfDT2024!,teacher,5
+nome,sobrenome,email,senha,role,sala,avatar
+Carlos,Diretor,carlos.dt@escola.com,ProfDT2024!,teacher,1,fotos/carlos.jpg
+Fernanda,Tutora,fernanda.dt@escola.com,ProfDT2024!,teacher,5,
 ```
 
-**Nota:** `sala` é o número da sala (1–12).
+**Nota:** `sala` é o número da sala (1–12). `avatar` segue as mesmas regras do `alunos.csv`.
 
 ---
 
 ### 5. `alunos.csv` — Alunos
 
 ```csv
-nome,sobrenome,email,senha,role,sala
-Pedro,Lima,pedro.lima@escola.com,Aluno2024!,student,1
-Lucia,Ferreira,lucia.ferreira@escola.com,Aluno2024!,student,1
+nome,sobrenome,email,senha,role,sala,avatar
+Pedro,Lima,pedro.lima@escola.com,Aluno2024!,student,1,fotos/alunos/pedro.jpg
+Lucia,Ferreira,lucia.ferreira@escola.com,Aluno2024!,student,1,
 ```
+
+A coluna `avatar` é **opcional**: deixe vazia ou omita a coluna inteiramente para pular.
+O caminho é **relativo à pasta `data/`** do projeto (nunca use caminhos absolutos).
+
+**Formatos aceitos:** JPEG, PNG ou WebP. A imagem é redimensionada automaticamente
+para 256×256 px e salva como WebP em `data/avatars/`.
 
 ---
 

@@ -1,16 +1,41 @@
-# Cache e Arquivos Não Essenciais
+# Cache e arquivos não essenciais
 /edupbl_backend.egg-info
 **/__pycache__
 .coverage
 backend.zip
 
-# Dados reais - NUNCA commitar
-/data/**/*.csv
-/data/**/*.xlsx
-/data/**/*.json
-*.env
+# Ambiente virtual (gerado localmente pelo uv/venv)
+.venv/
 
-# Mantém a dos dados mas não o conteúdo
-!/data/**/.gitkeep
-!/data/**/*.example
-!/data/**/README.md
+# Dados reais — NUNCA commitar
+/data/usuarios/*.csv
+/data/usuarios/*.xlsx
+/data/usuarios/*.json
+
+# Imagens de seed fornecidas pelo usuário — contêm fotos reais
+/data/seed-images/*
+!/data/seed-images/.gitkeep
+
+# Avatares gerados em runtime pelo sistema — gerado, não versionado
+/data/avatars/
+
+# Horários reais
+/data/horarios/*.csv
+/data/horarios/*.xlsx
+/data/horarios/*.json
+
+# Variáveis de ambiente com segredos
+*.env
+.env*
+!.env.example
+
+# Mantém estrutura mas não o conteúdo dos exemplos
+!/data/usuarios/.gitkeep
+!/data/usuarios/*.example
+!/data/usuarios/README.md
+!/data/usuarios/GUIA_RAPIDO_CSVs.md
+!/data/horarios/.gitkeep
+!/data/horarios/*.example
+!/data/.gitkeep
+!/data/README.md
+!/data/GUIA_RAPIDO_CSVs.md
