@@ -33,6 +33,7 @@ from PIL import Image
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.settings import AVATAR_DIR
 from app.domains.users.models import User
 from app.domains.users.schemas import (
     FilterPage,
@@ -68,9 +69,9 @@ _AVATAR_SIZE = 256
 # Tipos MIME aceitos no upload
 _ALLOWED_MIME = {'image/jpeg', 'image/png', 'image/webp'}
 
-# Pasta onde os avatares gerados pelo sistema são salvos (relativa à raiz do projeto).
-# Não versionar: gerado em runtime.
-_AVATAR_DIR = Path(__file__).resolve().parents[4] / 'data' / 'avatars'
+# Pasta onde os avatares gerados pelo sistema são salvos.
+# Path centralizado em settings.py — não recalcular via __file__ aqui.
+_AVATAR_DIR = AVATAR_DIR
 
 
 def _avatar_path(user_id: int) -> Path:
@@ -464,9 +465,7 @@ async def update_student_profile(
 @router.patch(
     '/{user_id}/deactivate',
     response_model=Message,
-    dependencies=[
-        Depends(PermissionChecker({SystemPermissions.USER_DELETE}))
-    ],
+    dependencies=[Depends(PermissionChecker({SystemPermissions.USER_DELETE}))],
 )
 async def deactivate_user(
     session: Session,

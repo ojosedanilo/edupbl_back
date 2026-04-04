@@ -262,10 +262,9 @@ def test_import_avatar_file_not_found(tmp_path):
 def test_import_avatar_success(tmp_path):
     """Avatar encontrado → processado e salvo em data/avatars/."""
     from PIL import Image
-    from app.domains.users import routers as user_routers
 
-    # Cria imagem de origem em seed-images
-    seed_dir = tmp_path / 'seed-images'
+    # Cria imagem de origem em fotos
+    seed_dir = tmp_path / 'fotos'
     seed_dir.mkdir()
     src = seed_dir / 'foto.jpg'
     Image.new('RGB', (100, 100), color=(255, 0, 0)).save(src, format='JPEG')
@@ -275,7 +274,7 @@ def test_import_avatar_success(tmp_path):
 
     with (
         patch('app.shared.db.seed.SEED_IMAGES_DIR', seed_dir),
-        patch.object(user_routers, '_AVATAR_DIR', avatar_dir),
+        patch('app.shared.db.seed.AVATAR_DIR', avatar_dir),
     ):
         result = _import_avatar(42, 'foto.jpg')
 
@@ -286,9 +285,8 @@ def test_import_avatar_success(tmp_path):
 def test_import_avatar_rgba_converted(tmp_path):
     """Imagem RGBA é convertida para RGB antes de salvar."""
     from PIL import Image
-    from app.domains.users import routers as user_routers
 
-    seed_dir = tmp_path / 'seed-images'
+    seed_dir = tmp_path / 'fotos'
     seed_dir.mkdir()
     src = seed_dir / 'rgba.png'
     Image.new('RGBA', (50, 80), color=(0, 255, 0, 200)).save(src, format='PNG')
@@ -297,7 +295,7 @@ def test_import_avatar_rgba_converted(tmp_path):
 
     with (
         patch('app.shared.db.seed.SEED_IMAGES_DIR', seed_dir),
-        patch.object(user_routers, '_AVATAR_DIR', avatar_dir),
+        patch('app.shared.db.seed.AVATAR_DIR', avatar_dir),
     ):
         result = _import_avatar(7, 'rgba.png')
 
@@ -306,9 +304,8 @@ def test_import_avatar_rgba_converted(tmp_path):
 
 def test_import_avatar_processing_error(tmp_path):
     """Erro de processamento → retorna None, não aborta."""
-    from app.domains.users import routers as user_routers
 
-    seed_dir = tmp_path / 'seed-images'
+    seed_dir = tmp_path / 'fotos'
     seed_dir.mkdir()
     # Arquivo corrompido
     bad = seed_dir / 'bad.jpg'
@@ -318,7 +315,7 @@ def test_import_avatar_processing_error(tmp_path):
 
     with (
         patch('app.shared.db.seed.SEED_IMAGES_DIR', seed_dir),
-        patch.object(user_routers, '_AVATAR_DIR', avatar_dir),
+        patch('app.shared.db.seed.AVATAR_DIR', avatar_dir),
     ):
         result = _import_avatar(1, 'bad.jpg')
 
@@ -451,12 +448,11 @@ async def test_seed_real_users_duplicate_username_resolved(session, tmp_path):
 async def test_seed_real_users_with_avatar(session, tmp_path):
     """CSV com coluna avatar preenchida → avatar processado e salvo."""
     from PIL import Image
-    from app.domains.users import routers as user_routers
 
     usuarios_dir = tmp_path / 'usuarios'
     usuarios_dir.mkdir()
 
-    seed_dir = tmp_path / 'seed-images'
+    seed_dir = tmp_path / 'fotos'
     seed_dir.mkdir()
     img_file = seed_dir / 'foto.jpg'
     Image.new('RGB', (100, 100), color=(10, 20, 30)).save(
@@ -477,7 +473,7 @@ async def test_seed_real_users_with_avatar(session, tmp_path):
     with (
         patch('app.shared.db.seed.USUARIOS_DIR', usuarios_dir),
         patch('app.shared.db.seed.SEED_IMAGES_DIR', seed_dir),
-        patch.object(user_routers, '_AVATAR_DIR', avatar_dir),
+        patch('app.shared.db.seed.AVATAR_DIR', avatar_dir),
     ):
         await seed_real_users(session)
 
@@ -496,12 +492,11 @@ async def test_seed_real_users_with_avatar_and_sala(session, tmp_path):
     que permanecia descoberto pelos demais testes (avatar sem sala ou sala sem avatar).
     """
     from PIL import Image
-    from app.domains.users import routers as user_routers
 
     usuarios_dir = tmp_path / 'usuarios'
     usuarios_dir.mkdir()
 
-    seed_dir = tmp_path / 'seed-images'
+    seed_dir = tmp_path / 'fotos'
     seed_dir.mkdir()
     img_file = seed_dir / 'foto.jpg'
     Image.new('RGB', (100, 100), color=(10, 20, 30)).save(
@@ -522,7 +517,7 @@ async def test_seed_real_users_with_avatar_and_sala(session, tmp_path):
     with (
         patch('app.shared.db.seed.USUARIOS_DIR', usuarios_dir),
         patch('app.shared.db.seed.SEED_IMAGES_DIR', seed_dir),
-        patch.object(user_routers, '_AVATAR_DIR', avatar_dir),
+        patch('app.shared.db.seed.AVATAR_DIR', avatar_dir),
     ):
         await seed_real_users(session)
 
@@ -540,10 +535,10 @@ async def test_seed_real_users_with_avatar_and_sala(session, tmp_path):
 
 
 async def test_seed_real_users_avatar_not_found(session, tmp_path):
-    """Avatar referenciado no CSV mas ausente em seed-images → usuário criado sem avatar."""
+    """Avatar referenciado no CSV mas ausente em fotos → usuário criado sem avatar."""
     usuarios_dir = tmp_path / 'usuarios'
     usuarios_dir.mkdir()
-    seed_dir = tmp_path / 'seed-images'
+    seed_dir = tmp_path / 'fotos'
     seed_dir.mkdir()
 
     _write_csv(

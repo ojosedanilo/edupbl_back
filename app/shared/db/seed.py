@@ -1,10 +1,18 @@
 import csv
 import unicodedata
-from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.settings import (
+    AVATAR_DIR as _SETTINGS_AVATAR_DIR,
+)
+from app.core.settings import (
+    SEED_IMAGES_DIR as _SETTINGS_SEED_IMAGES_DIR,
+)
+from app.core.settings import (
+    USUARIOS_DIR as _SETTINGS_USUARIOS_DIR,
+)
 from app.domains.users.models import Classroom, User, UserRole
 from app.shared.security import get_password_hash
 
@@ -122,20 +130,17 @@ async def _gerar_username_unico(
 # Importação de avatar a partir do CSV
 # ---------------------------------------------------------------------------
 
-# Raiz do projeto (4 níveis acima de app/shared/db/seed.py)
-DATA_DIR = Path(__file__).parent.parent.parent.parent / 'data'
-USUARIOS_DIR = DATA_DIR / 'usuarios'
-
-# Imagens fornecidas pelo usuário para o seed ficam em data/seed-images/.
-# NÃO confundir com data/avatars/ (gerado pelo sistema em runtime).
-SEED_IMAGES_DIR = DATA_DIR / 'seed-images'
+# Paths centralizados em settings.py — não recalcular via __file__ aqui.
+USUARIOS_DIR = _SETTINGS_USUARIOS_DIR
+SEED_IMAGES_DIR = _SETTINGS_SEED_IMAGES_DIR
+AVATAR_DIR = _SETTINGS_AVATAR_DIR
 
 
 def _import_avatar(user_id: int, avatar_filename: str) -> str | None:
     """
     Copia e redimensiona o avatar indicado no CSV para data/avatars/.
 
-    avatar_filename é o nome do arquivo relativo a data/seed-images/
+    avatar_filename é o nome do arquivo relativo a data/fotos/
     (ex: 'joao.jpg' ou 'turma1/pedro.png').
 
     Se o arquivo não existir, loga um aviso e retorna None sem abortar
@@ -147,7 +152,8 @@ def _import_avatar(user_id: int, avatar_filename: str) -> str | None:
         Image,
     )  # import local — Pillow pode não estar em todos os envs
 
-    from app.domains.users.routers import _AVATAR_DIR, _AVATAR_SIZE
+    _AVATAR_DIR = AVATAR_DIR  # módulo-level — patchável nos testes
+    _AVATAR_SIZE = 256
 
     src = SEED_IMAGES_DIR / avatar_filename.strip()
     if not src.exists():
@@ -392,7 +398,7 @@ async def seed_real_users(session: AsyncSession):  # noqa: PLR0914
                 _classroom_id = classroom_id
 
                 # Coluna 'avatar' opcional — nome do arquivo relativo a
-                # data/seed-images/ (ex: 'joao.jpg' ou 'turma1/pedro.png').
+                # data/fotos/ (ex: 'joao.jpg' ou 'turma1/pedro.png').
                 # Deixe vazio (ou omita a coluna) para não importar avatar.
                 avatar_filename = row.get('avatar', '').strip()
                 if avatar_filename:

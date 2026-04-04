@@ -13,8 +13,8 @@ backend.zip
 /data/usuarios/*.json
 
 # Imagens de seed fornecidas pelo usuário — contêm fotos reais
-/data/seed-images/*
-!/data/seed-images/.gitkeep
+/data/fotos/*
+!/data/fotos/.gitkeep
 
 # Avatares gerados em runtime pelo sistema — gerado, não versionado
 /data/avatars/

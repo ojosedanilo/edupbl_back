@@ -11,14 +11,28 @@ from pathlib import Path
 from pydantic import computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Localiza o .env na raiz do projeto independente de onde o processo roda
-BASE_DIR = Path(__file__).resolve().parents[3]
+# Localiza o .env na raiz do projeto independente de onde o processo roda.
+# parents[3]: app/core/settings.py → app/core → app → backend → raiz_projeto
+BASE_DIR = Path(__file__).resolve().parents[2]
 ENV_PATH = BASE_DIR / '.env'
+
+# ── Diretórios de dados ────────────────────────────────────────────────── #
+# Fonte única de verdade para todos os paths de data/.
+# Módulos que precisam desses caminhos importam daqui — nunca recalculam
+# via __file__ próprio, evitando divergência quando a profundidade muda.
+DATA_DIR = BASE_DIR / 'data'
+AVATAR_DIR = DATA_DIR / 'avatars'
+SEED_IMAGES_DIR = DATA_DIR / 'fotos'
+USUARIOS_DIR = DATA_DIR / 'usuarios'
+HORARIOS_DIR = DATA_DIR / 'horarios'
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=ENV_PATH, case_sensitive=True, env_file_encoding='utf-8'
+        env_file=ENV_PATH,
+        case_sensitive=True,
+        env_file_encoding='utf-8',
+        extra='ignore',
     )
 
     # ── Aplicação ──────────────────────────────────────────────────── #
@@ -63,9 +77,7 @@ class Settings(BaseSettings):
     DB_HOST: str = 'localhost'
     DB_PORT: int = 5432
     DB_NAME: str = 'edupbl'
-    DATABASE_URL: str = (
-        f'postgresql+asyncpg://{DB_USER}:{DB_PASSWORD}@localhost:5432/{DB_NAME}'
-    )
+    DATABASE_URL: str = f'postgresql+asyncpg://{DB_USER}:{DB_PASSWORD}@localhost:5432/{DB_NAME}'
 
 
 settings = Settings()

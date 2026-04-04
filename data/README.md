@@ -18,7 +18,7 @@ data/
 │   ├── porteiros.csv
 │   └── responsaveis.csv
 │
-├── seed-images/       # Fotos originais fornecidas por você para o seed
+├── fotos/       # Fotos originais fornecidas por você para o seed
 │   └── foto.jpg       # Ex: referenciado como "foto.jpg" na coluna avatar do CSV
 │
 ├── avatars/           # ⚙️ Gerado automaticamente em runtime — NÃO editar
@@ -35,11 +35,11 @@ data/
 
 | Diretório          | O que guarda                        | Quem gerencia   | No Git? |
 |--------------------|-------------------------------------|-----------------|---------|
-| `data/seed-images/`| Fotos originais que você fornece    | Você manualmente | ❌ Nunca |
+| `data/fotos/`| Fotos originais que você fornece    | Você manualmente | ❌ Nunca |
 | `data/avatars/`    | Avatares processados (256×256 WebP) | Sistema (runtime)| ❌ Nunca |
 
 **Por que separar?**  
-- `seed-images/` contém fotos reais (LGPD) — nunca devem ir ao repositório  
+- `fotos/` contém fotos reais (LGPD) — nunca devem ir ao repositório  
 - `avatars/` é gerado pelo sistema e pode ser recriado a qualquer momento rodando o seed  
 - Avatares enviados via upload pelo próprio usuário também vão para `avatars/`
 
@@ -55,7 +55,7 @@ data/
 ### ❌ O QUE NUNCA DEVE IR PRO GIT:
 - `*.csv` — CSVs com dados reais
 - `data/avatars/` — avatares processados
-- `data/seed-images/` — fotos originais dos usuários
+- `data/fotos/` — fotos originais dos usuários
 
 ---
 
@@ -73,7 +73,7 @@ nome,sobrenome,email,senha,role,avatar
 - `email` — E-mail institucional (único)
 - `senha` — Senha temporária inicial (`must_change_password=True`)
 - `role` — (Opcional) Role: `student`, `teacher`, `coordinator`, `porter`, `guardian`, `admin`
-- `avatar` — (Opcional) Nome do arquivo relativo a `data/seed-images/`. Ex: `foto.jpg` ou `turma1/pedro.png`
+- `avatar` — (Opcional) Nome do arquivo relativo a `data/fotos/`. Ex: `foto.jpg` ou `turma1/pedro.png`
 
 **Colunas extras para alunos e professores DT:**
 - `sala` — Número da sala de 1 a 12
@@ -87,7 +87,7 @@ Pedro,Lima,pedro@escola.com,Senha!,student,turma1/pedro.png
 Maria,Silva,maria@escola.com,Senha!,teacher,
 ```
 
-O arquivo `ana_costa.jpg` deve estar em `data/seed-images/ana_costa.jpg`.  
+O arquivo `ana_costa.jpg` deve estar em `data/fotos/ana_costa.jpg`.  
 Deixe a coluna vazia para usuários sem foto.
 
 ### 🏫 Mapeamento de Salas
@@ -120,8 +120,8 @@ Deixe a coluna vazia para usuários sem foto.
 ### 1. Preparar CSVs e fotos
 
 ```bash
-# Coloque as fotos em data/seed-images/
-cp /sua/pasta/fotos/*.jpg data/seed-images/
+# Coloque as fotos em data/fotos/
+cp /sua/pasta/fotos/*.jpg data/fotos/
 
 # Crie os CSVs referenciando os arquivos pelo nome
 data/usuarios/alunos.csv

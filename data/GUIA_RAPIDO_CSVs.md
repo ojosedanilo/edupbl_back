@@ -131,22 +131,17 @@ joao.santos@escola.com,4,3,planning,Planejamento
 
 ## ▶️ Como Importar
 
-### Só usuários:
+### Todos os dados reais juntos:
 ```bash
 uv run python scripts/seed_db.py --real
 ```
 
-### Só horários (professores já devem estar no banco):
+### Todos os dados de teste juntos:
 ```bash
-uv run python scripts/seed_db.py --schedules
+uv run python scripts/seed_db.py --tests
 ```
 
-### Usuários + horários juntos:
-```bash
-uv run python scripts/seed_db.py --real --schedules
-```
-
-### Tudo (usuários de teste + reais + horários):
+### Tudo (Dados reais + Dados de teste):
 ```bash
 uv run python scripts/seed_db.py --all
 ```
