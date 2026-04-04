@@ -24,9 +24,9 @@ async def test_create_user(session, mock_db_time):
 
     user = await session.scalar(select(User).where(User.username == 'alice'))
 
-    # Verifica campos escalares individualmente — asdict() nao e usado porque
+    # Verifica campos escalares individualmente — asdict() não e usado porque
     # o modelo agora tem relationship fields (students, guardians, classroom)
-    # que nao devem (e nao podem) ser serializados por asdict() neste contexto.
+    # que não devem (e não podem) ser serializados por asdict() neste contexto.
     assert user.id == 1
     assert user.username == 'alice'
     assert user.password == 'secret'

@@ -40,15 +40,15 @@ A grade semanal e os eventos especiais têm naturezas diferentes. A grade é rec
 
 ### `schedule_slots` — a grade fixa semanal
 
-| Campo             | Tipo                                                      | Observação                               |
-| ----------------- | --------------------------------------------------------- | ------------------------------------------ |
-| `id`            | PK                                                        |                                            |
-| `classroom_id`  | FK → classrooms                                          | CASCADE DELETE                             |
-| `teacher_id`    | FK → users (TEACHER)                                     | SET NULL se professor for deletado         |
-| `type`          | Enum (`class_period`, `snack_break`, `lunch_break`) | Tipo do período                           |
-| `title`         | String(200)                                               | Nome do período (ex: "Matemática")       |
-| `weekday`       | Integer (1=dom … 7=sáb)                                 | Dia da semana via enum `Weekday`         |
-| `period_number` | Integer (1–9), nullable                                  | Número do período (None para intervalos) |
+| Campo           | Tipo                                                | Observação                               |
+| --------------- | --------------------------------------------------- | ---------------------------------------- |
+| `id`            | PK                                                  |                                          |
+| `classroom_id`  | FK → classrooms                                     | CASCADE DELETE                           |
+| `teacher_id`    | FK → users (TEACHER)                                | SET NULL se professor for deletado       |
+| `type`          | Enum (`class_period`, `snack_break`, `lunch_break`) | Tipo do período                          |
+| `title`         | String(200)                                         | Nome do período (ex: "Matemática")       |
+| `weekday`       | Integer (1=dom … 7=sáb)                             | Dia da semana via enum `WeekdayEnum`     |
+| `period_number` | Integer (1–9), nullable                             | Número do período (None para intervalos) |
 
 Adicione um índice único em `(classroom_id, weekday, period_number, type)` — uma turma não pode ter dois professores no mesmo período do mesmo dia.
 
@@ -56,15 +56,15 @@ Adicione um índice único em `(classroom_id, weekday, period_number, type)` —
 
 ### `schedule_overrides` — exceções pontuais
 
-| Campo             | Tipo        | Observação                                       |
-| ----------------- | ----------- | -------------------------------------------------- |
-| `id`            | PK          |                                                    |
-| `title`         | String(200) | Ex: "Simulado ENEM", "Festa Junina"                |
+| Campo           | Tipo        | Observação                                        |
+| --------------- | ----------- | ------------------------------------------------- |
+| `id`            | PK          |                                                   |
+| `title`         | String(200) | Ex: "Simulado ENEM", "Festa Junina"               |
 | `override_date` | Date        | Data específica do evento                         |
-| `starts_at`     | Time        | Início do horário modificado                     |
+| `starts_at`     | Time        | Início do horário modificado                      |
 | `ends_at`       | Time        | Fim do horário modificado                         |
 | `affects_all`   | Boolean     | True = toda a escola; False = só turmas definidas |
-| `created_at`    | Datetime    | Auto                                               |
+| `created_at`    | Datetime    | Auto                                              |
 
 > **Nota:** O campo chama-se `title`, não `description`. Use `title` nos schemas e consultas.
 
@@ -84,16 +84,16 @@ A lógica de `periods.py` deve:
 4. Resultado esperado:
 
 | Período | Início | Fim   |
-| -------- | ------- | ----- |
-| 1        | 07:30   | 08:20 |
-| 2        | 08:20   | 09:10 |
-| 3        | 09:30   | 10:20 |
-| 4        | 10:20   | 11:10 |
-| 5        | 11:10   | 12:00 |
-| 6        | 13:20   | 14:10 |
-| 7        | 14:10   | 15:00 |
-| 8        | 15:20   | 16:10 |
-| 9        | 16:10   | 17:00 |
+| ------- | ------ | ----- |
+| 1       | 07:30  | 08:20 |
+| 2       | 08:20  | 09:10 |
+| 3       | 09:30  | 10:20 |
+| 4       | 10:20  | 11:10 |
+| 5       | 11:10  | 12:00 |
+| 6       | 13:20  | 14:10 |
+| 7       | 14:10  | 15:00 |
+| 8       | 15:20  | 16:10 |
+| 9       | 16:10  | 17:00 |
 
 Os intervalos são: 09:10–09:30 (manhã), 12:00–13:20 (almoço), 15:00–15:20 (tarde).
 
@@ -132,18 +132,18 @@ Adicionar em `ROLE_PERMISSIONS`:
 
 Prefixo: `/schedules`
 
-| Método | Rota                                          | Permissão       | Comportamento                           |
-| ------- | --------------------------------------------- | ---------------- | --------------------------------------- |
-| GET     | `/schedules/periods`                        | qualquer logado  | Retorna a tabela de períodos como JSON |
-| GET     | `/schedules/classroom/{id}`                 | SCHEDULES_VIEW   | Grade completa de uma turma             |
-| GET     | `/schedules/teacher/{id}`                   | SCHEDULES_VIEW   | Grade completa de um professor          |
-| GET     | `/schedules/current-teacher/{classroom_id}` | SCHEDULES_VIEW   | Professor em aula agora nesta turma     |
-| POST    | `/schedules/slots`                          | SCHEDULES_MANAGE | Criar slot                              |
-| PUT     | `/schedules/slots/{id}`                     | SCHEDULES_MANAGE | Editar slot                             |
-| DELETE  | `/schedules/slots/{id}`                     | SCHEDULES_MANAGE | Remover slot                            |
-| GET     | `/schedules/overrides`                      | SCHEDULES_VIEW   | Listar eventos especiais                |
-| POST    | `/schedules/overrides`                      | SCHEDULES_MANAGE | Criar evento especial                   |
-| DELETE  | `/schedules/overrides/{id}`                 | SCHEDULES_MANAGE | Remover evento especial                 |
+| Método | Rota                                        | Permissão        | Comportamento                          |
+| ------ | ------------------------------------------- | ---------------- | -------------------------------------- |
+| GET    | `/schedules/periods`                        | qualquer logado  | Retorna a tabela de períodos como JSON |
+| GET    | `/schedules/classroom/{id}`                 | SCHEDULES_VIEW   | Grade completa de uma turma            |
+| GET    | `/schedules/teacher/{id}`                   | SCHEDULES_VIEW   | Grade completa de um professor         |
+| GET    | `/schedules/current-teacher/{classroom_id}` | SCHEDULES_VIEW   | Professor em aula agora nesta turma    |
+| POST   | `/schedules/slots`                          | SCHEDULES_MANAGE | Criar slot                             |
+| PUT    | `/schedules/slots/{id}`                     | SCHEDULES_MANAGE | Editar slot                            |
+| DELETE | `/schedules/slots/{id}`                     | SCHEDULES_MANAGE | Remover slot                           |
+| GET    | `/schedules/overrides`                      | SCHEDULES_VIEW   | Listar eventos especiais               |
+| POST   | `/schedules/overrides`                      | SCHEDULES_MANAGE | Criar evento especial                  |
+| DELETE | `/schedules/overrides/{id}`                 | SCHEDULES_MANAGE | Remover evento especial                |
 
 **`GET /schedules/periods`** é consumido pelo frontend para montar a tabela visual da grade. Retorna diretamente a constante `PERIODS` (do tipo `PeriodsList`) calculada em memória — sem consulta ao banco. O `response_model` correto é `PeriodsList`, não `SlotList`. Não precisa de `session`.
 
@@ -163,34 +163,34 @@ A permissão RBAC (`SCHEDULES_VIEW` ou `SCHEDULES_MANAGE`) é verificada primeir
 
 **`GET /schedules/classroom/{classroom_id}`**
 
-| Role                | Pode acessar                                                                                   |
-| ------------------- | ---------------------------------------------------------------------------------------------- |
-| Coordenador / Admin | Qualquer turma                                                                                 |
+| Role                | Pode acessar                                                                              |
+| ------------------- | ----------------------------------------------------------------------------------------- |
+| Coordenador / Admin | Qualquer turma                                                                            |
 | Professor           | Qualquer turma — a grade é informação pública da escola                                   |
 | Aluno               | Apenas a própria turma (`current_user.classroom_id == classroom_id`) — 403 caso contrário |
-| Responsável        | Apenas a turma de um filho seu (verificar `guardian_student`) — 403 caso contrário         |
-| Porteiro            | Qualquer turma (recebe `SCHEDULES_VIEW` via `_BASE_PERMISSIONS`)                           |
+| Responsável         | Apenas a turma de um filho seu (verificar `guardian_student`) — 403 caso contrário        |
+| Porteiro            | Qualquer turma (recebe `SCHEDULES_VIEW` via `_BASE_PERMISSIONS`)                          |
 
 > Alunos e responsáveis não devem conseguir consultar a grade de turmas alheias. A verificação deve ser feita no corpo do endpoint após o `PermissionChecker`.
 
 **`GET /schedules/teacher/{user_id}`**
 
-| Role                            | Pode acessar                                                                    |
-| ------------------------------- | ------------------------------------------------------------------------------- |
-| Coordenador / Admin             | Grade de qualquer professor                                                     |
-| Professor                       | Apenas a própria grade (`user_id == current_user.id`) — 403 caso contrário |
-| Aluno / Responsável / Porteiro | Acesso negado — 403                                                            |
+| Role                           | Pode acessar                                                               |
+| ------------------------------ | -------------------------------------------------------------------------- |
+| Coordenador / Admin            | Grade de qualquer professor                                                |
+| Professor                      | Apenas a própria grade (`user_id == current_user.id`) — 403 caso contrário |
+| Aluno / Responsável / Porteiro | Acesso negado — 403                                                        |
 
 > Esta rota expõe a grade completa de um professor individual. Alunos e responsáveis não têm necessidade legítima de consultar isso; a grade da turma deles é suficiente.
 
 **`GET /schedules/current-teacher/{classroom_id}`**
 
-| Role                           | Pode acessar                                                                                   |
-| ------------------------------ | ---------------------------------------------------------------------------------------------- |
-| Coordenador / Admin / Porteiro | Qualquer turma                                                                                 |
-| Professor                      | Qualquer turma — útil para saber quem está em aula numa sala vizinha                        |
+| Role                           | Pode acessar                                                                              |
+| ------------------------------ | ----------------------------------------------------------------------------------------- |
+| Coordenador / Admin / Porteiro | Qualquer turma                                                                            |
+| Professor                      | Qualquer turma — útil para saber quem está em aula numa sala vizinha                      |
 | Aluno                          | Apenas a própria turma (`current_user.classroom_id == classroom_id`) — 403 caso contrário |
-| Responsável                   | Apenas a turma de um filho seu — 403 caso contrário                                          |
+| Responsável                    | Apenas a turma de um filho seu — 403 caso contrário                                       |
 
 ### Escrita de slots (SCHEDULES_MANAGE)
 
@@ -206,7 +206,7 @@ A permissão RBAC (`SCHEDULES_VIEW` ou `SCHEDULES_MANAGE`) é verificada primeir
 
 ## Schemas
 
-**`SlotCreate`** — campos obrigatórios para criar um slot: `classroom_id`, `teacher_id` (nullable), `type` (`class_period` | `snack_break` | `lunch_break`), `title` (String 200), `weekday` (enum `Weekday`, 1=dom…7=sáb), `period_number` (1–9, nullable para intervalos).
+**`SlotCreate`** — campos obrigatórios para criar um slot: `classroom_id`, `teacher_id` (nullable), `type` (`class_period` | `snack_break` | `lunch_break`), `title` (String 200), `weekday` (enum `WeekdayEnum`, 1=dom…7=sáb), `period_number` (1–9, nullable para intervalos).
 
 > **Nota:** Os campos `subject` e `period` **não existem**. Os nomes corretos são `title` e `period_number`. O `weekday` abrange de domingo (1) a sábado (7), não apenas 2–6.
 
@@ -370,15 +370,15 @@ Crie `tests/test_schedules.py` cobrindo:
 
 ## Checklist de Implementação
 
-- [X] Criar `app/domains/schedules/__init__.py`
-- [X] Criar `app/domains/schedules/periods.py` + testes unitários dos períodos
-- [X] Criar `app/domains/schedules/models.py` (ScheduleSlot, ScheduleOverride, override_classrooms)
-- [X] Criar `app/domains/schedules/schemas.py`
-- [X] Criar `app/domains/schedules/helpers.py` (get_current_teacher)
-- [X] Criar `app/domains/schedules/routers.py`
-- [X] Adicionar `SCHEDULES_VIEW` e `SCHEDULES_MANAGE` em `permissions.py`
-- [X] Atualizar `ROLE_PERMISSIONS` para incluir `SCHEDULES_VIEW` nas roles corretas
-- [X] Registrar router em `app/main.py`
-- [X] Importar models em `migrations/env.py`
-- [X] Gerar e aplicar migration
-- [X] Criar `tests/test_schedules.py`
+- [x] Criar `app/domains/schedules/__init__.py`
+- [x] Criar `app/domains/schedules/periods.py` + testes unitários dos períodos
+- [x] Criar `app/domains/schedules/models.py` (ScheduleSlot, ScheduleOverride, override_classrooms)
+- [x] Criar `app/domains/schedules/schemas.py`
+- [x] Criar `app/domains/schedules/helpers.py` (get_current_teacher)
+- [x] Criar `app/domains/schedules/routers.py`
+- [x] Adicionar `SCHEDULES_VIEW` e `SCHEDULES_MANAGE` em `permissions.py`
+- [x] Atualizar `ROLE_PERMISSIONS` para incluir `SCHEDULES_VIEW` nas roles corretas
+- [x] Registrar router em `app/main.py`
+- [x] Importar models em `migrations/env.py`
+- [x] Gerar e aplicar migration
+- [x] Criar `tests/test_schedules.py`

@@ -272,7 +272,7 @@ async def seed_real_users(session: AsyncSession):  # noqa: PLR0914
         filepath = USUARIOS_DIR / filename
 
         if not filepath.exists():
-            print(f'AVISO {filename} nao encontrado — pulando.')
+            print(f'AVISO {filename} não encontrado — pulando.')
             continue
 
         print(f'\n📄 Processando: {filename}')

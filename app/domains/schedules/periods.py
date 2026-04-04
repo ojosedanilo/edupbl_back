@@ -1,5 +1,6 @@
 from datetime import datetime, time, timedelta
 
+from app.domains.schedules.enums import PeriodTypeEnum
 from app.domains.schedules.schemas import Period, PeriodsList
 
 
@@ -63,19 +64,19 @@ def _build_periods() -> PeriodsList:
     # Lista de intervalos (ordem crescente é importante)
     breaks = [
         Period(
-            type='snack_break',
+            type=PeriodTypeEnum.SNACK_BREAK,
             period_number=None,
             start=time(9, 10),
             end=time(9, 30),
         ),
         Period(
-            type='lunch_break',
+            type=PeriodTypeEnum.LUNCH_BREAK,
             period_number=None,
             start=time(12, 0),
             end=time(13, 20),
         ),
         Period(
-            type='snack_break',
+            type=PeriodTypeEnum.SNACK_BREAK,
             period_number=None,
             start=time(15, 0),
             end=time(15, 20),
@@ -124,7 +125,7 @@ def _build_periods() -> PeriodsList:
         # Cria o período de aula
         periods.append(
             Period(
-                type='class_period',
+                type=PeriodTypeEnum.CLASS_PERIOD,
                 period_number=period_number,
                 start=current_start,
                 end=current_end,

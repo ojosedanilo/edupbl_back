@@ -1,27 +1,16 @@
 from datetime import date, datetime, time
-from enum import IntEnum
-from typing import Literal, Optional
+from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
 
-
-class Weekday(IntEnum):
-    SUNDAY = 1
-    MONDAY = 2
-    TUESDAY = 3
-    WEDNESDAY = 4
-    THURSDAY = 5
-    FRIDAY = 6
-    SATURDAY = 7
+from app.domains.schedules.enums import PeriodTypeEnum, WeekdayEnum
 
 
 # Representa um período da grade (aula ou intervalo)
 class Period(BaseModel):
     # Tipo do período:
     # - class_period → aula
-    type: Literal['class_period', 'snack_break', 'lunch_break'] = (
-        'class_period'
-    )
+    type: PeriodTypeEnum = PeriodTypeEnum.CLASS_PERIOD
 
     # Número da aula (None para intervalos)
     period_number: Optional[int] = None
@@ -60,7 +49,7 @@ class SlotCreate(BaseModel):
     title: str
     classroom_id: int
     teacher_id: int | None
-    weekday: Weekday
+    weekday: WeekdayEnum
     period_number: int | None
 
 
@@ -72,7 +61,7 @@ class SlotPublic(BaseModel):
     title: str
     classroom_id: int
     teacher_id: int | None
-    weekday: Weekday
+    weekday: WeekdayEnum
     period_number: int | None
 
 

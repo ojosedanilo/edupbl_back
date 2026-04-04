@@ -11,7 +11,6 @@ Organização:
 from http import HTTPStatus
 from unittest.mock import patch
 
-import pytest_asyncio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import StaticPool

@@ -4,13 +4,14 @@ from typing import Optional
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domains.schedules.enums import PeriodTypeEnum, WeekdayEnum
 from app.domains.schedules.models import (
     ScheduleOverride,
     ScheduleSlot,
     override_classrooms,
 )
 from app.domains.schedules.periods import PERIODS  # , overlaps
-from app.domains.schedules.schemas import Period, PeriodsList, Weekday
+from app.domains.schedules.schemas import Period, PeriodsList
 from app.domains.users.models import User
 
 
@@ -25,7 +26,7 @@ def is_time_at_class_period(at_time: time, periods: PeriodsList) -> bool:
     current_period = get_current_period(at_time, periods)
     if current_period is None:
         return False
-    elif current_period.type == 'class_period':
+    elif current_period.type == PeriodTypeEnum.CLASS_PERIOD:
         return True
     return False
 
@@ -39,8 +40,8 @@ async def get_current_teacher(
     Se não, retorna None.
     """
     current_period = get_current_period(at_time, PERIODS)
-    # Faz com que Domingo seja 1, ... Sábado seja 7, e converte para Weekday enum
-    weekday = Weekday((date.today().weekday() + 1) % 7 + 1)
+    # Faz com que Domingo seja 1, ... Sábado seja 7, e converte para WeekdayEnum enum
+    weekday = WeekdayEnum((date.today().weekday() + 1) % 7 + 1)
 
     # 1. Verifica se há um `ScheduleOverride` ativo para
     # a data e horário em questão que afeta a turma

@@ -19,6 +19,7 @@ import pytest
 import pytest_asyncio
 from fastapi import HTTPException
 
+from app.domains.schedules.enums import PeriodTypeEnum, WeekdayEnum
 from app.domains.schedules.helpers import (
     get_current_period,
     get_current_teacher,
@@ -31,7 +32,7 @@ from app.domains.schedules.models import (
 )
 from app.domains.schedules.periods import PERIODS, overlaps
 from app.domains.schedules.routers import _check_classroom_access
-from app.domains.schedules.schemas import Period, Weekday
+from app.domains.schedules.schemas import Period
 from app.domains.users.models import Classroom, guardian_student
 from app.shared.rbac.roles import UserRole
 from app.shared.security import create_access_token
@@ -119,9 +120,9 @@ async def slot(session, classroom, teacher):
     s = ScheduleSlot(
         classroom_id=classroom.id,
         teacher_id=teacher.id,
-        type='class_period',
+        type=PeriodTypeEnum.CLASS_PERIOD,
         title='Matemática',
-        weekday=Weekday.MONDAY,
+        weekday=WeekdayEnum.MONDAY,
         period_number=1,
     )
     session.add(s)
@@ -154,18 +155,18 @@ async def override_specific(client, coordinator, classroom):
 # ===========================================================================
 
 LIST_PERIODS_TO_VERIFY = [
-    ('class_period', 1, time(7, 30), time(8, 20)),
-    ('class_period', 2, time(8, 20), time(9, 10)),
-    ('snack_break', None, time(9, 10), time(9, 30)),
-    ('class_period', 3, time(9, 30), time(10, 20)),
-    ('class_period', 4, time(10, 20), time(11, 10)),
-    ('class_period', 5, time(11, 10), time(12, 0)),
-    ('lunch_break', None, time(12, 0), time(13, 20)),
-    ('class_period', 6, time(13, 20), time(14, 10)),
-    ('class_period', 7, time(14, 10), time(15, 0)),
-    ('snack_break', None, time(15, 0), time(15, 20)),
-    ('class_period', 8, time(15, 20), time(16, 10)),
-    ('class_period', 9, time(16, 10), time(17, 0)),
+    (PeriodTypeEnum.CLASS_PERIOD, 1, time(7, 30), time(8, 20)),
+    (PeriodTypeEnum.CLASS_PERIOD, 2, time(8, 20), time(9, 10)),
+    (PeriodTypeEnum.SNACK_BREAK, None, time(9, 10), time(9, 30)),
+    (PeriodTypeEnum.CLASS_PERIOD, 3, time(9, 30), time(10, 20)),
+    (PeriodTypeEnum.CLASS_PERIOD, 4, time(10, 20), time(11, 10)),
+    (PeriodTypeEnum.CLASS_PERIOD, 5, time(11, 10), time(12, 0)),
+    (PeriodTypeEnum.LUNCH_BREAK, None, time(12, 0), time(13, 20)),
+    (PeriodTypeEnum.CLASS_PERIOD, 6, time(13, 20), time(14, 10)),
+    (PeriodTypeEnum.CLASS_PERIOD, 7, time(14, 10), time(15, 0)),
+    (PeriodTypeEnum.SNACK_BREAK, None, time(15, 0), time(15, 20)),
+    (PeriodTypeEnum.CLASS_PERIOD, 8, time(15, 20), time(16, 10)),
+    (PeriodTypeEnum.CLASS_PERIOD, 9, time(16, 10), time(17, 0)),
 ]
 PERIODS_TO_VERIFY = [
     Period(type=p[0], period_number=p[1], start=p[2], end=p[3])
@@ -179,14 +180,16 @@ def test_periods_exact_sequence():
 
 
 def test_periods_have_9_class_periods():
-    class_periods = [p for p in PERIODS.periods if p.type == 'class_period']
+    class_periods = [
+        p for p in PERIODS.periods if p.type.requires_teacher
+    ]
     assert len(class_periods) == 9
 
 
 def test_no_class_period_during_lunch():
     for t in [time(12, 0), time(12, 30), time(13, 0), time(13, 19)]:
         period = get_current_period(t, PERIODS)
-        assert not (period is not None and period.type == 'class_period')
+        assert not (period is not None and period.type == PeriodTypeEnum.CLASS_PERIOD)
 
 
 def test_no_period_before_school():
@@ -227,7 +230,7 @@ def test_overlaps_midnight_crossing_false():
 
 def test_period_contains_midnight_true():
     p = Period(
-        type='class_period', period_number=1, start=time(23, 0), end=time(1, 0)
+        type=PeriodTypeEnum.CLASS_PERIOD, period_number=1, start=time(23, 0), end=time(1, 0)
     )
     assert p.contains(time(23, 30)) is True
     assert p.contains(time(0, 30)) is True
@@ -235,7 +238,7 @@ def test_period_contains_midnight_true():
 
 def test_period_contains_midnight_false():
     p = Period(
-        type='class_period', period_number=1, start=time(23, 0), end=time(1, 0)
+        type=PeriodTypeEnum.CLASS_PERIOD, period_number=1, start=time(23, 0), end=time(1, 0)
     )
     assert p.contains(time(2, 0)) is False
 
@@ -252,9 +255,9 @@ async def test_create_slot(client, classroom, teacher, coordinator):
         json={
             'classroom_id': classroom.id,
             'teacher_id': teacher.id,
-            'type': 'class_period',
+            'type': PeriodTypeEnum.CLASS_PERIOD.value,
             'title': 'Física',
-            'weekday': Weekday.TUESDAY,
+            'weekday': WeekdayEnum.TUESDAY,
             'period_number': 2,
         },
         headers=_auth(coordinator),
@@ -270,9 +273,9 @@ async def test_create_slot_without_teacher(client, classroom, coordinator):
         json={
             'classroom_id': classroom.id,
             'teacher_id': None,
-            'type': 'class_period',
+            'type': PeriodTypeEnum.CLASS_PERIOD.value,
             'title': 'Vago',
-            'weekday': Weekday.FRIDAY,
+            'weekday': WeekdayEnum.FRIDAY,
             'period_number': 9,
         },
         headers=_auth(coordinator),
@@ -288,7 +291,7 @@ async def test_create_slot_duplicate_returns_409(client, slot, coordinator):
         json={
             'classroom_id': slot.classroom_id,
             'teacher_id': slot.teacher_id,
-            'type': slot.type,
+            'type': slot.type.value,
             'title': 'Duplicado',
             'weekday': slot.weekday,
             'period_number': slot.period_number,
@@ -304,11 +307,11 @@ async def test_create_slot_student_forbidden(client, session, classroom):
     resp = client.post(
         '/schedules/slots',
         json={
-            'type': 'class_period',
+            'type': PeriodTypeEnum.CLASS_PERIOD.value,
             'title': 'X',
             'classroom_id': classroom.id,
             'teacher_id': None,
-            'weekday': Weekday.MONDAY,
+            'weekday': WeekdayEnum.MONDAY,
             'period_number': 1,
         },
         headers=_auth(stud),
@@ -323,7 +326,7 @@ async def test_update_slot_title(client, slot, coordinator):
         json={
             'classroom_id': slot.classroom_id,
             'teacher_id': slot.teacher_id,
-            'type': slot.type,
+            'type': slot.type.value,
             'title': 'Química Atualizada',
             'weekday': slot.weekday,
             'period_number': slot.period_number,
@@ -341,7 +344,7 @@ async def test_update_slot_self_no_409(client, slot, coordinator):
         json={
             'classroom_id': slot.classroom_id,
             'teacher_id': slot.teacher_id,
-            'type': slot.type,
+            'type': slot.type.value,
             'title': 'Novo Nome',
             'weekday': slot.weekday,
             'period_number': slot.period_number,
@@ -360,9 +363,9 @@ async def test_update_slot_conflict_with_other_returns_409(
         json={
             'classroom_id': classroom.id,
             'teacher_id': teacher.id,
-            'type': 'class_period',
+            'type': PeriodTypeEnum.CLASS_PERIOD.value,
             'title': 'Biologia',
-            'weekday': Weekday.MONDAY,
+            'weekday': WeekdayEnum.MONDAY,
             'period_number': 2,
         },
         headers=_auth(coordinator),
@@ -373,9 +376,9 @@ async def test_update_slot_conflict_with_other_returns_409(
         json={
             'classroom_id': classroom.id,
             'teacher_id': teacher.id,
-            'type': 'class_period',
+            'type': PeriodTypeEnum.CLASS_PERIOD.value,
             'title': 'Biologia',
-            'weekday': Weekday.MONDAY,
+            'weekday': WeekdayEnum.MONDAY,
             'period_number': 1,
         },
         headers=_auth(coordinator),
@@ -390,9 +393,9 @@ async def test_update_slot_not_found(client, coordinator):
         json={
             'classroom_id': 1,
             'teacher_id': None,
-            'type': 'class_period',
+            'type': PeriodTypeEnum.CLASS_PERIOD.value,
             'title': 'X',
-            'weekday': Weekday.MONDAY,
+            'weekday': WeekdayEnum.MONDAY,
             'period_number': 1,
         },
         headers=_auth(coordinator),
@@ -427,7 +430,7 @@ async def test_list_periods_authenticated(client, coordinator):
     resp = client.get('/schedules/periods', headers=_auth(coordinator))
     assert resp.status_code == HTTPStatus.OK
     class_periods = [
-        p for p in resp.json()['periods'] if p['type'] == 'class_period'
+        p for p in resp.json()['periods'] if p['type'] == PeriodTypeEnum.CLASS_PERIOD.value
     ]
     assert len(class_periods) == 9
 
@@ -585,9 +588,9 @@ async def test_porter_cannot_create_slot(client, classroom, teacher, porter):
         json={
             'classroom_id': classroom.id,
             'teacher_id': teacher.id,
-            'type': 'class_period',
+            'type': PeriodTypeEnum.CLASS_PERIOD.value,
             'title': 'X',
-            'weekday': Weekday.WEDNESDAY,
+            'weekday': WeekdayEnum.WEDNESDAY,
             'period_number': 3,
         },
         headers=_auth(porter),
@@ -688,7 +691,7 @@ async def test_any_permission_checker_403(client, session):
 # 5. Helper get_current_teacher — integração com banco
 # ===========================================================================
 
-# 2026-03-30 = segunda-feira → weekday Python = 0 → nosso Weekday = 2 (MONDAY)
+# 2026-03-30 = segunda-feira → weekday Python = 0 → nosso WeekdayEnum = 2 (MONDAY)
 _MONDAY = date(2026, 3, 30)
 
 
@@ -699,9 +702,9 @@ async def test_helper_returns_teacher_during_class(
     s = ScheduleSlot(
         classroom_id=classroom.id,
         teacher_id=teacher.id,
-        type='class_period',
+        type=PeriodTypeEnum.CLASS_PERIOD,
         title='Matemática',
-        weekday=Weekday.MONDAY,
+        weekday=WeekdayEnum.MONDAY,
         period_number=1,
     )
     session.add(s)
@@ -720,9 +723,9 @@ async def test_helper_returns_none_on_break(session, classroom, teacher):
     s = ScheduleSlot(
         classroom_id=classroom.id,
         teacher_id=teacher.id,
-        type='class_period',
+        type=PeriodTypeEnum.CLASS_PERIOD,
         title='Matemática',
-        weekday=Weekday.MONDAY,
+        weekday=WeekdayEnum.MONDAY,
         period_number=1,
     )
     session.add(s)
@@ -740,9 +743,9 @@ async def test_helper_returns_none_before_school(session, classroom, teacher):
     s = ScheduleSlot(
         classroom_id=classroom.id,
         teacher_id=teacher.id,
-        type='class_period',
+        type=PeriodTypeEnum.CLASS_PERIOD,
         title='Matemática',
-        weekday=Weekday.MONDAY,
+        weekday=WeekdayEnum.MONDAY,
         period_number=1,
     )
     session.add(s)
@@ -769,9 +772,9 @@ async def test_helper_returns_none_slot_without_teacher(session, classroom):
     s = ScheduleSlot(
         classroom_id=classroom.id,
         teacher_id=None,
-        type='class_period',
+        type=PeriodTypeEnum.CLASS_PERIOD,
         title='Vago',
-        weekday=Weekday.MONDAY,
+        weekday=WeekdayEnum.MONDAY,
         period_number=1,
     )
     session.add(s)
@@ -789,9 +792,9 @@ async def test_helper_affects_all_override_blocks(session, classroom, teacher):
     s = ScheduleSlot(
         classroom_id=classroom.id,
         teacher_id=teacher.id,
-        type='class_period',
+        type=PeriodTypeEnum.CLASS_PERIOD,
         title='Matemática',
-        weekday=Weekday.MONDAY,
+        weekday=WeekdayEnum.MONDAY,
         period_number=1,
     )
     session.add(s)
@@ -820,9 +823,9 @@ async def test_helper_specific_override_does_not_affect_other_class(
     s = ScheduleSlot(
         classroom_id=classroom.id,
         teacher_id=teacher.id,
-        type='class_period',
+        type=PeriodTypeEnum.CLASS_PERIOD,
         title='Matemática',
-        weekday=Weekday.MONDAY,
+        weekday=WeekdayEnum.MONDAY,
         period_number=1,
     )
     session.add(s)
@@ -857,9 +860,9 @@ async def test_helper_specific_override_blocks_target_class(
     s = ScheduleSlot(
         classroom_id=classroom.id,
         teacher_id=teacher.id,
-        type='class_period',
+        type=PeriodTypeEnum.CLASS_PERIOD,
         title='Matemática',
-        weekday=Weekday.MONDAY,
+        weekday=WeekdayEnum.MONDAY,
         period_number=1,
     )
     session.add(s)
