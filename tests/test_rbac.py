@@ -198,3 +198,55 @@ def test_require_all_permissions_false(teacher_user):
         },
     )
     assert result is False
+
+
+# ---------------------------------------------------------------------------
+# rbac/dependencies.py line 66 — AnyPermissionChecker → 403 via HTTP
+# ---------------------------------------------------------------------------
+#
+# O branch `raise HTTPException(403)` dentro de AnyPermissionChecker.__call__
+# só é atingido quando NENHUMA das permissões do conjunto bate com as do user.
+# Usamos GET /schedules/classroom/{id} que exige
+#   AnyPermissionChecker({SCHEDULES_VIEW_ALL, SCHEDULES_VIEW_OWN, SCHEDULES_VIEW_CHILD}).
+# Um usuário com role GUARDIAN sem filhos vinculados passa pelo AnyPermissionChecker
+# (tem SCHEDULES_VIEW_CHILD), mas é barrado por _check_classroom_access — isso
+# não serve. Precisamos de um usuário que não tenha NENHUMA das três permissões.
+#
+# Porteiros têm SCHEDULES_VIEW_ALL → passam.
+# Professores têm SCHEDULES_VIEW_ALL → passam.
+# Alunos têm SCHEDULES_VIEW_OWN → passam.
+# Guardiões têm SCHEDULES_VIEW_CHILD → passam.
+#
+# A única role sem nenhuma das três é um usuário com role PORTER... não, Porteiro
+# tem VIEW_ALL. Criamos um user com role STUDENT mas sem classroom, que ainda
+# tem SCHEDULES_VIEW_OWN. Precisamos de uma role diferente para não ter nenhuma
+# das três. Usamos diretamente a fixture de GUARDIAN sem permissão de schedule?
+#
+# Na verdade: o endpoint GET /schedules/teacher/{id} exige
+#   AnyPermissionChecker({SCHEDULES_VIEW_ALL, SCHEDULES_VIEW_OWN}).
+# Guardiões têm SCHEDULES_VIEW_CHILD mas NÃO SCHEDULES_VIEW_ALL nem
+# SCHEDULES_VIEW_OWN → AnyPermissionChecker dispara 403 (linha 66).
+
+
+from app.shared.security import create_access_token  # noqa: E402
+
+
+async def test_any_permission_checker_403_via_http(client, session):
+    """
+    rbac/dependencies.py line 66: AnyPermissionChecker lança 403 quando
+    o usuário não possui NENHUMA das permissões exigidas.
+
+    GET /schedules/teacher/{id} exige SCHEDULES_VIEW_ALL ou SCHEDULES_VIEW_OWN.
+    Guardiões têm apenas SCHEDULES_VIEW_CHILD → 403.
+    """
+    from tests.conftest import _make_user  # noqa: PLC0415
+    from app.shared.rbac.roles import UserRole  # noqa: PLC0415
+
+    guardian = await _make_user(session, role=UserRole.GUARDIAN)
+    tok = create_access_token(data={'sub': guardian.email})
+    resp = client.get(
+        '/schedules/teacher/1',
+        headers={'Authorization': f'Bearer {tok}'},
+    )
+    assert resp.status_code == 403
+    assert resp.json()['detail'] == 'Insufficient permissions'

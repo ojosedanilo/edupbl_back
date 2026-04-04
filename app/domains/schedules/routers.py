@@ -55,7 +55,7 @@ from app.domains.schedules.schemas import (
     SlotList,
     SlotPublic,
 )
-from app.domains.users.models import User
+from app.domains.users.models import User, guardian_student
 from app.domains.users.routers import get_current_user
 from app.domains.users.schemas import UserPublic
 from app.shared.db.database import get_session
@@ -77,7 +77,9 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 # --------------------------------------------------------------------------- #
 
 
-def _check_classroom_access(user: User, classroom_id: int):
+async def _check_classroom_access(
+    user: User, classroom_id: int, session: AsyncSession
+):
     if require_permission(user, SystemPermissions.SCHEDULES_VIEW_ALL):
         return
 
@@ -87,9 +89,19 @@ def _check_classroom_access(user: User, classroom_id: int):
         return
 
     if require_permission(user, SystemPermissions.SCHEDULES_VIEW_CHILD):
-        if not any(
-            student.classroom_id == classroom_id for student in user.students
-        ):
+        # user.students usa lazy='noload' — nunca usar diretamente.
+        # Verificamos via JOIN direto: guardian → guardian_student → aluno com classroom_id certo.
+        student_in_class = await session.scalar(
+            select(User.id)
+            .join(
+                guardian_student,
+                (guardian_student.c.student_id == User.id)
+                & (guardian_student.c.guardian_id == user.id),
+            )
+            .where(User.classroom_id == classroom_id)
+            .limit(1)
+        )
+        if student_in_class is None:
             raise HTTPException(403, 'Insufficient permissions')
         return
 
@@ -167,7 +179,7 @@ async def list_classroom_schedule(
     current_user: CurrentUser,
     classroom_id: int = Path(alias='classroom_id'),
 ):
-    _check_classroom_access(current_user, classroom_id)
+    await _check_classroom_access(current_user, classroom_id, session)
 
     result = await session.scalars(
         select(ScheduleSlot).where(ScheduleSlot.classroom_id == classroom_id)
@@ -234,7 +246,7 @@ async def get_current_teacher_by_classroom(
     current_user: CurrentUser,
     classroom_id: int = Path(alias='classroom_id'),
 ):
-    _check_classroom_access(current_user, classroom_id)
+    await _check_classroom_access(current_user, classroom_id, session)
 
     current_teacher = await get_current_teacher(
         classroom_id, datetime.now().time(), session
