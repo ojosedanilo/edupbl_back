@@ -77,7 +77,21 @@ class Settings(BaseSettings):
     DB_HOST: str = 'localhost'
     DB_PORT: int = 5432
     DB_NAME: str = 'edupbl'
-    DATABASE_URL: str = f'postgresql+asyncpg://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}'
+
+    DATABASE_URL: str | None = None
+
+    @computed_field
+    @property
+    def RESOLVED_DATABASE_URL(self) -> str:
+        # 1. Prioriza DATABASE_URL do .env
+        if self.DATABASE_URL:
+            return self.DATABASE_URL
+
+        # 2. Monta dinamicamente com valores já carregados do .env
+        return (
+            f'postgresql+asyncpg://{self.DB_USER}:{self.DB_PASSWORD}'
+            f'@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}'
+        )
 
 
 settings = Settings()
