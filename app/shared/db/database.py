@@ -11,7 +11,12 @@ from sqlalchemy.ext.asyncio import (
 from app.core.settings import settings
 
 # Engine assíncrono — a conexão real só é aberta na primeira operação
-engine = create_async_engine(settings.DATABASE_URL, future=True)
+if settings.ENVIRONMENT == 'production':
+    engine = create_async_engine(
+        settings.DATABASE_URL, future=True, connect_args={'ssl': 'require'}
+    )
+else:
+    engine = create_async_engine(settings.DATABASE_URL, future=True)
 
 # Factory de sessões — expire_on_commit=False evita lazy-load após commit
 SessionLocal = async_sessionmaker(
