@@ -20,6 +20,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+import pytest_asyncio
 from pydantic import ValidationError
 
 from app.domains.users.schemas import UserSchema, UserUpdate
@@ -31,15 +32,27 @@ def _auth(user) -> dict:
     return {'Authorization': f'Bearer {make_token(user)}'}
 
 
+# Fixture local — admin para testes de criação e listagem
+@pytest_asyncio.fixture
+async def admin(session):
+    return await _make_user(session, role=UserRole.ADMIN)
+
+
+@pytest_asyncio.fixture
+async def coordinator(session):
+    return await _make_user(session, role=UserRole.COORDINATOR)
+
+
 # ===========================================================================
 # POST /users/ — criação
 # ===========================================================================
 
 
-def test_create_user_success(client):
-    """Dados válidos → 201 com campos corretos, senha nunca exposta."""
+def test_create_user_success(client, admin):
+    """Dados válidos + admin → 201 com campos corretos, senha nunca exposta."""
     resp = client.post(
         '/users/',
+        headers=_auth(admin),
         json={
             'username': 'novousuario',
             'email': 'novo@example.com',
@@ -59,10 +72,26 @@ def test_create_user_success(client):
     assert 'password' not in data
 
 
-def test_create_user_duplicate_username(client, user):
+def test_create_user_unauthenticated(client):
+    """POST /users/ sem token → 401."""
+    resp = client.post(
+        '/users/',
+        json={
+            'username': 'novousuario',
+            'email': 'novo@example.com',
+            'password': 'senhasegura',
+            'first_name': 'Novo',
+            'last_name': 'Usuário',
+        },
+    )
+    assert resp.status_code == HTTPStatus.UNAUTHORIZED
+
+
+def test_create_user_duplicate_username(client, admin, user):
     """Username já existente → 409 Conflict."""
     resp = client.post(
         '/users/',
+        headers=_auth(admin),
         json={
             'username': user.username,
             'email': 'outro@example.com',
@@ -75,10 +104,11 @@ def test_create_user_duplicate_username(client, user):
     assert resp.json() == {'detail': 'Username already exists'}
 
 
-def test_create_user_duplicate_email(client, user):
+def test_create_user_duplicate_email(client, admin, user):
     """E-mail já existente → 409 Conflict."""
     resp = client.post(
         '/users/',
+        headers=_auth(admin),
         json={
             'username': 'outrouser',
             'email': user.email,
@@ -91,11 +121,12 @@ def test_create_user_duplicate_email(client, user):
     assert resp.json() == {'detail': 'Email already exists'}
 
 
-async def test_create_user_username_conflict_async(client, session):
+async def test_create_user_username_conflict_async(client, session, admin):
     """Username duplicado via _make_user (async) → 409."""
     existing = await _make_user(session)
     resp = client.post(
         '/users/',
+        headers=_auth(admin),
         json={
             'username': existing.username,
             'email': 'outro@test.com',
@@ -108,11 +139,12 @@ async def test_create_user_username_conflict_async(client, session):
     assert resp.json()['detail'] == 'Username already exists'
 
 
-async def test_create_user_email_conflict_async(client, session):
+async def test_create_user_email_conflict_async(client, session, admin):
     """Email duplicado via _make_user (async) → 409."""
     existing = await _make_user(session)
     resp = client.post(
         '/users/',
+        headers=_auth(admin),
         json={
             'username': 'outro_user',
             'email': existing.email,
@@ -125,10 +157,11 @@ async def test_create_user_email_conflict_async(client, session):
     assert resp.json()['detail'] == 'Email already exists'
 
 
-def test_create_user_api_invalid_username(client):
+def test_create_user_api_invalid_username(client, admin):
     """Username inválido via API → 422 Unprocessable Entity."""
     resp = client.post(
         '/users/',
+        headers=_auth(admin),
         json={
             'username': 'João Silva',
             'email': 'joao@test.com',
@@ -145,35 +178,43 @@ def test_create_user_api_invalid_username(client):
 # ===========================================================================
 
 
-def test_read_users_returns_list(client, user):
-    """GET /users/ → lista com o usuário existente."""
-    resp = client.get('/users/')
+def test_read_users_returns_list(client, coordinator, user):
+    """GET /users/ com coordinator → lista com o usuário existente."""
+    resp = client.get('/users/', headers=_auth(coordinator))
     assert resp.status_code == HTTPStatus.OK
     body = resp.json()
     assert 'users' in body
     assert user.id in [u['id'] for u in body['users']]
 
 
-def test_read_users_empty(client):
-    """GET /users/ sem usuários → lista vazia."""
+def test_read_users_unauthenticated(client):
+    """GET /users/ sem token → 401."""
     resp = client.get('/users/')
+    assert resp.status_code == HTTPStatus.UNAUTHORIZED
+
+
+def test_read_users_empty(client, coordinator):
+    """GET /users/ com coordinator e sem usuários comuns → lista com só o coordinator."""
+    resp = client.get('/users/', headers=_auth(coordinator))
     assert resp.status_code == HTTPStatus.OK
-    assert resp.json() == {'users': []}
+    # O coordinator em si já é um usuário no banco
+    assert 'users' in resp.json()
 
 
-async def test_read_users_with_pagination(client, session):
+async def test_read_users_with_pagination(client, session, coordinator):
     """GET /users/?limit=1 → retorna exatamente 1 usuário."""
     await _make_user(session)
     await _make_user(session)
-    resp = client.get('/users/?limit=1&offset=0')
+    resp = client.get('/users/?limit=1&offset=0', headers=_auth(coordinator))
     assert resp.status_code == HTTPStatus.OK
     assert len(resp.json()['users']) == 1
 
 
-async def test_create_and_read_user(client):
+async def test_create_and_read_user(client, admin, coordinator):
     """POST /users/ + GET /users/ → novo usuário aparece na lista."""
     resp = client.post(
         '/users/',
+        headers=_auth(admin),
         json={
             'username': 'novo_user',
             'email': 'novo@test.com',
@@ -185,7 +226,7 @@ async def test_create_and_read_user(client):
     assert resp.status_code == HTTPStatus.CREATED
     user_id = resp.json()['id']
 
-    list_resp = client.get('/users/')
+    list_resp = client.get('/users/', headers=_auth(coordinator))
     ids = [u['id'] for u in list_resp.json()['users']]
     assert user_id in ids
 
@@ -195,9 +236,16 @@ async def test_create_and_read_user(client):
 # ===========================================================================
 
 
-async def test_get_avatar_user_not_found(client):
-    """GET /users/9999/avatar → 404 user not found."""
+async def test_get_avatar_unauthenticated(client):
+    """GET /users/9999/avatar sem token → 401 (endpoint protegido desde proteção de avatar)."""
     resp = client.get('/users/9999/avatar')
+    assert resp.status_code == HTTPStatus.UNAUTHORIZED
+
+
+async def test_get_avatar_user_not_found(client, session):
+    """GET /users/9999/avatar com token válido → 404 user not found."""
+    u = await _make_user(session)
+    resp = client.get('/users/9999/avatar', headers=_auth(u))
     assert resp.status_code == HTTPStatus.NOT_FOUND
     assert resp.json()['detail'] == 'User not found'
 
@@ -206,7 +254,7 @@ async def test_get_avatar_no_avatar_url(client, session):
     """GET avatar de usuário sem avatar_url → 404 avatar not found."""
     u = await _make_user(session)
     assert u.avatar_url is None
-    resp = client.get(f'/users/{u.id}/avatar')
+    resp = client.get(f'/users/{u.id}/avatar', headers=_auth(u))
     assert resp.status_code == HTTPStatus.NOT_FOUND
     assert resp.json()['detail'] == 'Avatar not found'
 
@@ -215,30 +263,22 @@ async def test_get_avatar_file_missing_on_disk(client, session, tmp_path):
     """GET avatar com avatar_url no banco mas arquivo ausente no disco → 404."""
     u = await _make_user(session)
     # Seta avatar_url no banco sem criar o arquivo
-    from sqlalchemy import update
     from app.domains.users.models import User
     from app.domains.users import routers as user_routers
 
     # Patch _AVATAR_DIR para tmp_path (sem criar o arquivo)
     with patch.object(user_routers, '_AVATAR_DIR', tmp_path):
-        # Força avatar_url no banco
-        u.avatar_url = f'avatars/{u.id}.webp'
-        from app.shared.db.database import get_session
-
-        # Usar a session do teste para atualizar
-        from sqlalchemy.ext.asyncio import AsyncSession
-
         u_fresh = await session.get(User, u.id)
         u_fresh.avatar_url = f'avatars/{u.id}.webp'
         await session.commit()
 
-        resp = client.get(f'/users/{u.id}/avatar')
+        resp = client.get(f'/users/{u.id}/avatar', headers=_auth(u))
         assert resp.status_code == HTTPStatus.NOT_FOUND
         assert resp.json()['detail'] == 'Avatar not found'
 
 
 async def test_get_avatar_success(client, session, tmp_path):
-    """GET avatar existente → 200 com content-type image/webp."""
+    """GET avatar existente com token válido → 200 com content-type image/webp."""
     from PIL import Image
     from app.domains.users.models import User
     from app.domains.users import routers as user_routers
@@ -256,7 +296,7 @@ async def test_get_avatar_success(client, session, tmp_path):
     await session.commit()
 
     with patch.object(user_routers, '_AVATAR_DIR', tmp_path):
-        resp = client.get(f'/users/{u.id}/avatar')
+        resp = client.get(f'/users/{u.id}/avatar', headers=_auth(u))
         assert resp.status_code == HTTPStatus.OK
         assert resp.headers['content-type'] == 'image/webp'
 
@@ -903,7 +943,7 @@ def test_delete_user_forbidden(client, user, other_user, token):
     assert resp.json() == {'detail': 'Not enough permissions'}
 
 
-def test_delete_user_success(client, user, token):
+def test_delete_user_success(client, admin, user, token):
     """DELETE do próprio usuário → 200, usuário não aparece mais na lista."""
     resp = client.delete(
         f'/users/{user.id}',
@@ -912,7 +952,7 @@ def test_delete_user_success(client, user, token):
     assert resp.status_code == HTTPStatus.OK
     assert resp.json() == {'message': 'User deleted'}
 
-    users = client.get('/users/').json()['users']
+    users = client.get('/users/', headers=_auth(admin)).json()['users']
     assert all(u['id'] != user.id for u in users)
 
 

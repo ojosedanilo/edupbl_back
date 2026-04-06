@@ -12,13 +12,15 @@ Rotas de usuários:
   DELETE /users/{user_id}               — deletar usuário (dados do banco e disco)
 
 Regras de autorização:
-  - Criar usuário : aberto (sem autenticação)
-  - Listar        : autenticado
+  - Criar usuário  : requer USER_CREATE (Admin/Coordinator)
+  - Listar         : requer USER_VIEW_ALL (Admin/Coordinator)
+  - Ver avatar     : requer USER_VIEW_OWN | USER_VIEW_ALL | USER_VIEW_CHILD
+                     (qualquer usuário autenticado com permissão de visualizar usuários)
   - Atualizar / Deletar : apenas o próprio usuário
-  - Trocar senha  : próprio usuário, com confirmação da senha atual
-  - Upload avatar : próprio usuário OU professor DT para alunos da sua turma
+  - Trocar senha   : próprio usuário, com confirmação da senha atual
+  - Upload avatar  : próprio usuário OU professor DT para alunos da sua turma
   - Editar perfil do aluno : professor DT (USER_EDIT_OWN_CLASSROOM), escopo restrito
-  - Desativar     : Admin ou Coordinator (USER_DELETE)
+  - Desativar      : Admin ou Coordinator (USER_DELETE)
 """
 
 import io
@@ -45,7 +47,10 @@ from app.domains.users.schemas import (
     UserUpdate,
 )
 from app.shared.db.database import get_session
-from app.shared.rbac.dependencies import PermissionChecker
+from app.shared.rbac.dependencies import (
+    AnyPermissionChecker,
+    PermissionChecker,
+)
 from app.shared.rbac.permissions import SystemPermissions
 from app.shared.rbac.roles import UserRole
 from app.shared.schemas import Message
@@ -159,10 +164,15 @@ async def _process_avatar_upload(
 # --------------------------------------------------------------------------- #
 
 
-@router.post('/', status_code=HTTPStatus.CREATED, response_model=UserPublic)
+@router.post(
+    '/',
+    status_code=HTTPStatus.CREATED,
+    response_model=UserPublic,
+    dependencies=[Depends(PermissionChecker({SystemPermissions.USER_CREATE}))],
+)
 async def create_user(user: UserSchema, session: Session):
     """
-    Cria um novo usuário.
+    Cria um novo usuário. Requer USER_CREATE (Admin ou Coordinator).
 
     Verifica conflito de username e e-mail antes de inserir.
     Retorna mensagens de erro distintas para cada campo em conflito.
@@ -207,12 +217,18 @@ async def create_user(user: UserSchema, session: Session):
 # --------------------------------------------------------------------------- #
 
 
-@router.get('/', response_model=UserList)
+@router.get(
+    '/',
+    response_model=UserList,
+    dependencies=[
+        Depends(PermissionChecker({SystemPermissions.USER_VIEW_ALL}))
+    ],
+)
 async def read_users(
     session: Session,
     filter_users: Annotated[FilterPage, Query()],
 ):
-    """Lista usuários com paginação via offset/limit."""
+    """Lista usuários com paginação via offset/limit. Acesso restrito a Admin e Coordinator."""
     result = await session.scalars(
         select(User).offset(filter_users.offset).limit(filter_users.limit)
     )
@@ -224,7 +240,18 @@ async def read_users(
 # --------------------------------------------------------------------------- #
 
 
-@router.get('/{user_id}/avatar')
+@router.get(
+    '/{user_id}/avatar',
+    dependencies=[
+        Depends(
+            AnyPermissionChecker({
+                SystemPermissions.USER_VIEW_OWN,
+                SystemPermissions.USER_VIEW_ALL,
+                SystemPermissions.USER_VIEW_CHILD,
+            })
+        )
+    ],
+)
 async def get_user_avatar(
     session: Session,
     user_id: int = FPath(alias='user_id'),
@@ -232,10 +259,11 @@ async def get_user_avatar(
     """
     Retorna o arquivo de avatar do usuário diretamente como imagem WebP.
 
-    Endpoint público — não exige autenticação, pois avatares são dados não
-    sensíveis (equivalente a uma foto de perfil). O front-end chama este
-    endpoint somente quando precisa exibir a imagem, evitando tráfego
-    desnecessário.
+    Requer autenticação e ao menos uma das permissões de visualização de
+    usuários: USER_VIEW_OWN (próprio usuário/aluno), USER_VIEW_ALL
+    (Admin/Coordinator) ou USER_VIEW_CHILD (Responsável vendo filho).
+    Isso protege dados de presença e identidade de alunos contra acesso
+    não autenticado.
 
     Retorna 404 se o usuário não existir ou não tiver avatar cadastrado.
     """
