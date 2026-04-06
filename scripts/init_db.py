@@ -23,8 +23,8 @@ async def create_database_if_not_exists():
     """Cria o banco de dados se não existir"""
 
     # URL sem o nome do banco (conecta no postgres padrão)
-    base_url = settings.DATABASE_URL.rsplit('/', 1)[0]
-    db_name = settings.DATABASE_URL.rsplit('/', 1)[1]
+    base_url = settings.RESOLVED_DATABASE_URL.rsplit('/', 1)[0]
+    db_name = settings.RESOLVED_DATABASE_URL.rsplit('/', 1)[1]
 
     # Remove parâmetros de query se houver
     if '?' in db_name:
@@ -65,7 +65,7 @@ async def create_enum_if_not_exists():
 
     print('🔧 Verificando tipo ENUM userrole...')
 
-    engine = create_async_engine(settings.DATABASE_URL)
+    engine = create_async_engine(settings.RESOLVED_DATABASE_URL)
 
     try:
         async with engine.connect() as conn:

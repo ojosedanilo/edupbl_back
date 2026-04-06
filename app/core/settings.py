@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     ENVIRONMENT: str = 'development'  # 'development' | 'production'
     API_URL: str = 'http://localhost:8000/'
+    FRONTEND_URL: str = 'http://localhost:5173'
 
     # ── Cookies ────────────────────────────────────────────────────── #
     # Computed fields derivados de ENVIRONMENT.
@@ -77,7 +78,23 @@ class Settings(BaseSettings):
     DB_HOST: str = 'localhost'
     DB_PORT: int = 5432
     DB_NAME: str = 'edupbl'
-    DATABASE_URL: str = f'postgresql+asyncpg://{DB_USER}:{DB_PASSWORD}@localhost:5432/{DB_NAME}'
+
+    DATABASE_URL: str | None = None
+
+    @computed_field
+    @property
+    def RESOLVED_DATABASE_URL(self) -> str:
+        # 1. Prioriza DATABASE_URL do .env
+        if self.DATABASE_URL:
+            return self.DATABASE_URL
+
+        # 2. Monta dinamicamente com valores já carregados do .env
+        return (
+            f'postgresql+asyncpg://{self.DB_USER}:{self.DB_PASSWORD}'
+            f'@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}'
+        )
 
 
 settings = Settings()
+
+print(f'!!! {settings.RESOLVED_DATABASE_URL}')

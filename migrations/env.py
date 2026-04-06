@@ -19,7 +19,7 @@ config = context.config
 
 config.set_main_option(
     "sqlalchemy.url",
-    settings.DATABASE_URL,
+    settings.RESOLVED_DATABASE_URL,
 )
 
 

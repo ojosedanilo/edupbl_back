@@ -48,7 +48,7 @@ app = FastAPI(title='EduPBL', lifespan=lifespan)
 # CORS: permite o frontend de dev enviar cookies (withCredentials: true)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=['http://localhost:5173'],
+    allow_origins=['http://localhost:5173', settings.FRONTEND_URL],
     allow_credentials=True,
     allow_methods=['*'],
     allow_headers=['*'],
