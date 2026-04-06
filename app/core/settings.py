@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     ENVIRONMENT: str = 'development'  # 'development' | 'production'
     API_URL: str = 'http://localhost:8000/'
+    FRONTEND_URL: str = 'http://localhost:5173'
 
     # ── Cookies ────────────────────────────────────────────────────── #
     # Computed fields derivados de ENVIRONMENT.
@@ -95,3 +96,5 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+print(f'!!! {settings.RESOLVED_DATABASE_URL}')
