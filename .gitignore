@@ -39,3 +39,4 @@ backend.zip
 !/data/.gitkeep
 !/data/README.md
 !/data/GUIA_RAPIDO_CSVs.md
+/data/horarios/informacoes
