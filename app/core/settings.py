@@ -97,4 +97,4 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-print(f'!!! {settings.RESOLVED_DATABASE_URL}')
+# print(f'!!! {settings.RESOLVED_DATABASE_URL}')

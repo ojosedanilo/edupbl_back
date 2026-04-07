@@ -2,16 +2,19 @@
 Testes de users/routers.py e users/schemas.py — cobertura 100%.
 
 Endpoints cobertos:
-  POST   /users/                    — criação
-  GET    /users/                    — listagem paginada
-  GET    /users/{id}/avatar         — servir avatar
-  PUT    /users/{id}                — atualização
-  PATCH  /users/me/avatar           — upload avatar próprio
-  PATCH  /users/me/password         — troca de senha
-  PATCH  /users/{id}/avatar         — DT faz upload de avatar de aluno
-  PATCH  /users/{id}/profile        — DT edita perfil de aluno
-  PATCH  /users/{id}/deactivate     — desativar usuário
-  DELETE /users/{id}                — deleção + remoção de avatar do disco
+  POST   /users/                         — criação
+  GET    /users/                         — listagem paginada
+  GET    /users/students                 — lista reduzida de todos os alunos
+  GET    /users/classroom/{id}           — alunos de uma turma (ownership check)
+  GET    /users/current-class-students   — alunos da aula atual do professor
+  GET    /users/{id}/avatar              — servir avatar
+  PUT    /users/{id}                     — atualização
+  PATCH  /users/me/avatar                — upload avatar próprio
+  PATCH  /users/me/password              — troca de senha
+  PATCH  /users/{id}/avatar              — DT faz upload de avatar de aluno
+  PATCH  /users/{id}/profile             — DT edita perfil de aluno
+  PATCH  /users/{id}/deactivate          — desativar usuário
+  DELETE /users/{id}                     — deleção + remoção de avatar do disco
 """
 
 import io
@@ -229,6 +232,181 @@ async def test_create_and_read_user(client, admin, coordinator):
     list_resp = client.get('/users/', headers=_auth(coordinator))
     ids = [u['id'] for u in list_resp.json()['users']]
     assert user_id in ids
+
+
+# ===========================================================================
+# GET /users/students â Lista reduzida de todos os alunos
+# ===========================================================================
+
+
+async def test_list_all_students_porter(client, session):
+    """Porteiro acessa /students â 200 com lista de alunos."""
+    porter = await _make_user(session, role=UserRole.PORTER)
+    s1 = await _make_user(session, role=UserRole.STUDENT, last_name='Zebra')
+    s2 = await _make_user(session, role=UserRole.STUDENT, last_name='Abreu')
+
+    resp = client.get('/users/students', headers=_auth(porter))
+
+    assert resp.status_code == HTTPStatus.OK
+    body = resp.json()
+    assert 'students' in body
+    ids = [s['id'] for s in body['students']]
+    assert s1.id in ids
+    assert s2.id in ids
+
+
+async def test_list_all_students_ordered_by_last_name(client, session):
+    """Alunos retornados ordenados por sobrenome (last_name ASC)."""
+    teacher = await _make_user(session, role=UserRole.TEACHER)
+    await _make_user(session, role=UserRole.STUDENT, last_name='Zebra')
+    await _make_user(session, role=UserRole.STUDENT, last_name='Abreu')
+    await _make_user(session, role=UserRole.STUDENT, last_name='Melo')
+
+    resp = client.get('/users/students', headers=_auth(teacher))
+
+    assert resp.status_code == HTTPStatus.OK
+    last_names = [s['last_name'] for s in resp.json()['students']]
+    assert last_names == sorted(last_names)
+
+
+async def test_list_all_students_requires_permission(client, session):
+    """Student e Guardian sem USER_VIEW_STUDENTS â 403."""
+    student = await _make_user(session, role=UserRole.STUDENT)
+    guardian = await _make_user(session, role=UserRole.GUARDIAN)
+
+    for actor in (student, guardian):
+        resp = client.get('/users/students', headers=_auth(actor))
+        assert resp.status_code == HTTPStatus.FORBIDDEN
+
+
+async def test_list_all_students_unauthenticated(client):
+    """Sem token â 401."""
+    resp = client.get('/users/students')
+    assert resp.status_code == HTTPStatus.UNAUTHORIZED
+
+
+# ===========================================================================
+# GET /users/classroom/{id} â Alunos de uma turma (ownership check)
+# ===========================================================================
+
+
+async def test_list_classroom_students_teacher_own(client, session):
+    """Professor acessa /classroom/{id} da própria turma â 200."""
+    teacher = await _make_user(session, role=UserRole.TEACHER, classroom_id=10)
+    s = await _make_user(session, role=UserRole.STUDENT, classroom_id=10)
+
+    resp = client.get('/users/classroom/10', headers=_auth(teacher))
+
+    assert resp.status_code == HTTPStatus.OK
+    ids = [st['id'] for st in resp.json()['students']]
+    assert s.id in ids
+
+
+async def test_list_classroom_students_teacher_other_forbidden(
+    client, session
+):
+    """Professor tenta acessar turma alheia â 403."""
+    teacher = await _make_user(session, role=UserRole.TEACHER, classroom_id=10)
+
+    resp = client.get('/users/classroom/99', headers=_auth(teacher))
+
+    assert resp.status_code == HTTPStatus.FORBIDDEN
+    assert 'própria turma' in resp.json()['detail']
+
+
+async def test_list_classroom_students_coordinator_any(client, session):
+    """Coordenador acessa qualquer turma â 200."""
+    coordinator = await _make_user(session, role=UserRole.COORDINATOR)
+    s = await _make_user(session, role=UserRole.STUDENT, classroom_id=5)
+
+    resp = client.get('/users/classroom/5', headers=_auth(coordinator))
+
+    assert resp.status_code == HTTPStatus.OK
+    ids = [st['id'] for st in resp.json()['students']]
+    assert s.id in ids
+
+
+async def test_list_classroom_students_porter_any(client, session):
+    """Porteiro acessa qualquer turma â 200."""
+    porter = await _make_user(session, role=UserRole.PORTER)
+    s = await _make_user(session, role=UserRole.STUDENT, classroom_id=7)
+
+    resp = client.get('/users/classroom/7', headers=_auth(porter))
+
+    assert resp.status_code == HTTPStatus.OK
+    ids = [st['id'] for st in resp.json()['students']]
+    assert s.id in ids
+
+
+async def test_list_classroom_students_admin_any(client, session):
+    """Admin acessa qualquer turma â 200."""
+    admin = await _make_user(session, role=UserRole.ADMIN)
+    s = await _make_user(session, role=UserRole.STUDENT, classroom_id=3)
+
+    resp = client.get('/users/classroom/3', headers=_auth(admin))
+
+    assert resp.status_code == HTTPStatus.OK
+    ids = [st['id'] for st in resp.json()['students']]
+    assert s.id in ids
+
+
+# ===========================================================================
+# GET /users/current-class-students â Alunos da aula atual
+# ===========================================================================
+
+
+async def test_current_class_students_no_classroom(client, session):
+    """Professor sem classroom_id â 404 'Você não tem turma associada'."""
+    teacher = await _make_user(session, role=UserRole.TEACHER)
+
+    resp = client.get('/users/current-class-students', headers=_auth(teacher))
+
+    assert resp.status_code == HTTPStatus.NOT_FOUND
+    assert 'turma associada' in resp.json()['detail']
+
+
+async def test_current_class_students_outside_class_time(client, session):
+    """Fora do horário de aula â 404 'Nenhuma aula em andamento'."""
+    from datetime import time as dtime
+    from unittest.mock import patch
+
+    teacher = await _make_user(session, role=UserRole.TEACHER, classroom_id=1)
+
+    with patch('app.domains.users.routers.datetime') as mock_dt:
+        mock_dt.now.return_value.time.return_value = dtime(0, 0)
+
+        resp = client.get(
+            '/users/current-class-students', headers=_auth(teacher)
+        )
+
+    assert resp.status_code == HTTPStatus.NOT_FOUND
+    assert 'andamento' in resp.json()['detail']
+
+
+async def test_current_class_students_during_class(client, session):
+    """Durante horário de aula â 200 com alunos da turma do professor."""
+    from datetime import time as dtime
+    from unittest.mock import patch
+
+    teacher = await _make_user(session, role=UserRole.TEACHER, classroom_id=2)
+    s1 = await _make_user(session, role=UserRole.STUDENT, classroom_id=2)
+    s2 = await _make_user(session, role=UserRole.STUDENT, classroom_id=2)
+    # Aluno de outra turma â não deve aparecer
+    other = await _make_user(session, role=UserRole.STUDENT, classroom_id=99)
+
+    # 07:45 é um CLASS_PERIOD válido (confirmado em test_schedules.py)
+    with patch('app.domains.users.routers.datetime') as mock_dt:
+        mock_dt.now.return_value.time.return_value = dtime(7, 45)
+
+        resp = client.get(
+            '/users/current-class-students', headers=_auth(teacher)
+        )
+
+    assert resp.status_code == HTTPStatus.OK
+    ids = [s['id'] for s in resp.json()['students']]
+    assert s1.id in ids
+    assert s2.id in ids
+    assert other.id not in ids
 
 
 # ===========================================================================

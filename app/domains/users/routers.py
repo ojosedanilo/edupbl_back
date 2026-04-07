@@ -2,6 +2,9 @@
 Rotas de usuários:
   POST   /users                         — criar usuário
   GET    /users                         — listar usuários (paginado)
+  GET    /users/students                — lista reduzida de todos os alunos (porteiro/professor)
+  GET    /users/classroom/{classroom_id} — alunos de uma turma (com ownership check)
+  GET    /users/current-class-students  — alunos da aula atual do professor logado
   GET    /users/{user_id}/avatar        — servir avatar do usuário
   PUT    /users/{user_id}               — atualizar próprios dados
   PATCH  /users/me/avatar               — enviar/trocar avatar (próprio usuário)
@@ -14,6 +17,7 @@ Rotas de usuários:
 Regras de autorização:
   - Criar usuário  : requer USER_CREATE (Admin/Coordinator)
   - Listar         : requer USER_VIEW_ALL (Admin/Coordinator)
+  - Lista de alunos: requer USER_VIEW_STUDENTS (Porter/Teacher/Coordinator/Admin)
   - Ver avatar     : requer USER_VIEW_OWN | USER_VIEW_ALL | USER_VIEW_CHILD
                      (qualquer usuário autenticado com permissão de visualizar usuários)
   - Atualizar / Deletar : apenas o próprio usuário
@@ -24,6 +28,7 @@ Regras de autorização:
 """
 
 import io
+from datetime import datetime
 from http import HTTPStatus
 from pathlib import Path
 from typing import Annotated
@@ -36,11 +41,15 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.settings import AVATAR_DIR
+from app.domains.schedules.helpers import is_time_at_class_period
+from app.domains.schedules.periods import PERIODS
 from app.domains.users.models import User
+from app.shared.schemas import FilterPage, Message
 from app.domains.users.schemas import (
-    FilterPage,
     PasswordChange,
     StudentProfileUpdate,
+    StudentSummary,
+    StudentSummaryList,
     UserList,
     UserPublic,
     UserSchema,
@@ -53,7 +62,6 @@ from app.shared.rbac.dependencies import (
 )
 from app.shared.rbac.permissions import SystemPermissions
 from app.shared.rbac.roles import UserRole
-from app.shared.schemas import Message
 from app.shared.security import (
     get_current_user,
     get_password_hash,
@@ -233,6 +241,120 @@ async def read_users(
         select(User).offset(filter_users.offset).limit(filter_users.limit)
     )
     return {'users': result.all()}
+
+
+# --------------------------------------------------------------------------- #
+# GET /users/students — Lista reduzida de todos os alunos                     #
+# --------------------------------------------------------------------------- #
+
+
+@router.get(
+    '/students',
+    response_model=StudentSummaryList,
+    dependencies=[
+        Depends(PermissionChecker({SystemPermissions.USER_VIEW_STUDENTS}))
+    ],
+)
+async def list_all_students(session: Session):
+    """
+    Retorna lista reduzida de todos os alunos, ordenada por sobrenome.
+
+    Requer USER_VIEW_STUDENTS (Porter, Teacher, Coordinator, Admin).
+    Expõe apenas campos de identificação (StudentSummary) — sem dados sensíveis.
+    """
+    result = await session.scalars(
+        select(User)
+        .where(User.role == UserRole.STUDENT)
+        .order_by(User.last_name)
+    )
+    return {'students': result.all()}
+
+
+# --------------------------------------------------------------------------- #
+# GET /users/classroom/{classroom_id} — Alunos de uma turma                  #
+# --------------------------------------------------------------------------- #
+
+
+@router.get(
+    '/classroom/{classroom_id}',
+    response_model=StudentSummaryList,
+    dependencies=[
+        Depends(PermissionChecker({SystemPermissions.USER_VIEW_STUDENTS}))
+    ],
+)
+async def list_students_of_classroom(
+    session: Session,
+    current_user: CurrentUser,
+    classroom_id: int = FPath(alias='classroom_id'),
+):
+    """
+    Retorna lista reduzida de alunos de uma turma específica, ordenada por sobrenome.
+
+    Requer USER_VIEW_STUDENTS. Ownership check: professor só acessa a própria
+    classroom_id; coordinator, admin e porteiro acessam qualquer turma.
+    """
+    is_restricted = current_user.role == UserRole.TEACHER and not (
+        current_user.role
+        in (UserRole.COORDINATOR, UserRole.ADMIN, UserRole.PORTER)
+    )
+    if is_restricted and current_user.classroom_id != classroom_id:
+        raise HTTPException(
+            status_code=HTTPStatus.FORBIDDEN,
+            detail='Acesso negado: você só pode ver alunos da sua própria turma',
+        )
+
+    result = await session.scalars(
+        select(User)
+        .where(User.role == UserRole.STUDENT)
+        .where(User.classroom_id == classroom_id)
+        .order_by(User.last_name)
+    )
+    return {'students': result.all()}
+
+
+# --------------------------------------------------------------------------- #
+# GET /users/current-class-students — Alunos da aula atual do professor       #
+# --------------------------------------------------------------------------- #
+
+
+@router.get(
+    '/current-class-students',
+    response_model=StudentSummaryList,
+    dependencies=[
+        Depends(PermissionChecker({SystemPermissions.USER_VIEW_STUDENTS}))
+    ],
+)
+async def list_current_class_students(
+    session: Session,
+    current_user: CurrentUser,
+):
+    """
+    Retorna os alunos da turma que o professor está lecionando agora.
+
+    Determina a aula atual via horário do dia e classroom_id do professor.
+    Requer USER_VIEW_STUDENTS. Retorna 404 se o professor não estiver em aula
+    ou não tiver classroom_id associado.
+    """
+    if current_user.classroom_id is None:
+        raise HTTPException(
+            status_code=HTTPStatus.NOT_FOUND,
+            detail='Você não tem turma associada',
+        )
+
+    now = datetime.now().time()
+    if not is_time_at_class_period(now, PERIODS):
+        raise HTTPException(
+            status_code=HTTPStatus.NOT_FOUND,
+            detail='Nenhuma aula em andamento no momento',
+        )
+
+    result = await session.scalars(
+        select(User)
+        .where(User.role == UserRole.STUDENT)
+        .where(User.classroom_id == current_user.classroom_id)
+        .order_by(User.last_name)
+    )
+    return {'students': result.all()}
 
 
 # --------------------------------------------------------------------------- #

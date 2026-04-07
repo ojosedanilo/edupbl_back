@@ -59,9 +59,7 @@ class SystemPermissions(str, Enum):
         'occurrences:read_child'  # Ocorrências do(s) filho(s)
     )
     OCCURRENCES_VIEW_OWN = 'occurrences:read_own'  # Criei OU sou o aluno
-    OCCURRENCES_VIEW_OWN_CLASSROOM = (
-        'occurrences:read_own_classroom'  # Todas as ocorrências da minha turma (DT)
-    )
+    OCCURRENCES_VIEW_OWN_CLASSROOM = 'occurrences:read_own_classroom'  # Todas as ocorrências da minha turma (DT)
 
     # ── Relatórios ─────────────────────────────────────────────────── #
     REPORTS_VIEW_ALL = 'reports:view_all'  # Relatórios de todas as turmas
@@ -82,6 +80,9 @@ class SystemPermissions(str, Enum):
     USER_VIEW_ALL = 'users:read_all'  # Todos os usuários
     USER_VIEW_CHILD = 'users:read_child'  # Informações do(s) filho(s)
     USER_VIEW_OWN = 'users:read_own'  # Próprias informações
+    USER_VIEW_STUDENTS = (
+        'users:read_students'  # Lista reduzida de alunos (porteiro/professor)
+    )
 
 
 # Permissões que o Coordenador NÃO possui
@@ -106,6 +107,7 @@ ROLE_PERMISSIONS: dict[UserRole, set[SystemPermissions]] = {
         SystemPermissions.DELAYS_CREATE,
         SystemPermissions.DELAYS_VIEW_ALL,
         SystemPermissions.SCHEDULES_VIEW_ALL,
+        SystemPermissions.USER_VIEW_STUDENTS,
     },
     # Professor
     UserRole.TEACHER: {
@@ -118,6 +120,7 @@ ROLE_PERMISSIONS: dict[UserRole, set[SystemPermissions]] = {
         SystemPermissions.SCHEDULES_VIEW_ALL,
         SystemPermissions.SPACES_RESERVATE,
         SystemPermissions.SPACES_VIEW_ALL,
+        SystemPermissions.USER_VIEW_STUDENTS,
     },
     # Responsável
     UserRole.GUARDIAN: {

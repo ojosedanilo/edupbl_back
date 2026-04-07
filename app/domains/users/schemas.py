@@ -9,12 +9,11 @@ Hierarquia:
   UserWithPermissions → UserPublic + conjunto de permissões
   PasswordChange      → troca de senha com confirmação
   UserList            → wrapper de lista paginada
-  FilterPage          → parâmetros de paginação (offset/limit)
 """
 
 import re
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
 
 from app.shared.rbac.permissions import SystemPermissions
 from app.shared.rbac.roles import UserRole
@@ -126,8 +125,25 @@ class UserList(BaseModel):
     users: list[UserPublic]
 
 
-class FilterPage(BaseModel):
-    """Parâmetros de paginação para endpoints de listagem."""
+class StudentSummary(BaseModel):
+    """
+    Visão reduzida de um aluno — exposta a porteiros e professores.
 
-    offset: int = Field(0, ge=0, description='Número de registros a pular')
-    limit: int = Field(100, ge=1, description='Máximo de registros retornados')
+    Contém apenas o necessário para identificar o aluno na interface:
+    nome, turma e avatar. Campos sensíveis (e-mail, telefone, etc.)
+    são omitidos intencionalmente.
+    """
+
+    id: int
+    first_name: str
+    last_name: str
+    classroom_id: int | None
+    avatar_url: str | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class StudentSummaryList(BaseModel):
+    """Wrapper de listagem de alunos com dados reduzidos."""
+
+    students: list[StudentSummary]
