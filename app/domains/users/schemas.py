@@ -147,3 +147,15 @@ class StudentSummaryList(BaseModel):
     """Wrapper de listagem de alunos com dados reduzidos."""
 
     students: list[StudentSummary]
+
+
+class UserBulkRequest(BaseModel):
+    """Lista de IDs para busca em lote de usuários."""
+
+    ids: list[int]
+
+
+class UserBulkResponse(BaseModel):
+    """Wrapper de resposta de busca em lote de usuários."""
+
+    users: list[UserPublic]

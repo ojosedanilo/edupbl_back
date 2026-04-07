@@ -44,12 +44,13 @@ from app.core.settings import AVATAR_DIR
 from app.domains.schedules.helpers import is_time_at_class_period
 from app.domains.schedules.periods import PERIODS
 from app.domains.users.models import User
-from app.shared.schemas import FilterPage, Message
 from app.domains.users.schemas import (
     PasswordChange,
-    StudentProfileUpdate,
-    StudentSummary,
+    # StudentProfileUpdate,
+    # StudentSummary,
     StudentSummaryList,
+    UserBulkRequest,
+    UserBulkResponse,
     UserList,
     UserPublic,
     UserSchema,
@@ -62,6 +63,7 @@ from app.shared.rbac.dependencies import (
 )
 from app.shared.rbac.permissions import SystemPermissions
 from app.shared.rbac.roles import UserRole
+from app.shared.schemas import FilterPage, Message
 from app.shared.security import (
     get_current_user,
     get_password_hash,
@@ -362,7 +364,8 @@ async def list_current_class_students(
 # --------------------------------------------------------------------------- #
 
 
-@router.get('/search',
+@router.get(
+    '/search',
     response_model=UserList,
     dependencies=[
         Depends(
@@ -376,9 +379,13 @@ async def list_current_class_students(
 )
 async def search_users(
     session: Session,
-    q: Annotated[str, Query(description="Termo de busca (nome ou username)")],
-    role: Annotated[UserRole | None, Query(description="Filtrar por papel")] = None,
-    limit: Annotated[int, Query(description="Limite de resultados", ge=1, le=50)] = 10,
+    q: Annotated[str, Query(description='Termo de busca (nome ou username)')],
+    role: Annotated[
+        UserRole | None, Query(description='Filtrar por papel')
+    ] = None,
+    limit: Annotated[
+        int, Query(description='Limite de resultados', ge=1, le=50)
+    ] = 10,
 ):
     """Busca usuários por nome ou username. Usado para autocomplete."""
     query = select(User).where(
@@ -394,6 +401,48 @@ async def search_users(
 
     result = await session.scalars(query.limit(limit))
     return {'users': result.all()}
+
+
+# --------------------------------------------------------------------------- #
+# POST /users/bulk — Buscar múltiplos usuários por IDs                        #
+# --------------------------------------------------------------------------- #
+
+
+@router.post(
+    '/bulk',
+    response_model=UserBulkResponse,
+    dependencies=[
+        Depends(
+            AnyPermissionChecker({
+                SystemPermissions.USER_VIEW_ALL,
+                SystemPermissions.USER_VIEW_STUDENTS,
+            })
+        )
+    ],
+)
+async def get_users_bulk(
+    data: UserBulkRequest,
+    session: Session,
+):
+    """
+    Retorna informações de múltiplos usuários a partir de uma lista de IDs.
+
+    IDs inexistentes são silenciosamente ignorados — apenas os encontrados
+    são retornados. A ordem da resposta segue a ordem dos IDs fornecidos.
+
+    Requer USER_VIEW_ALL (Admin/Coordinator) ou USER_VIEW_STUDENTS
+    (Teacher/Porter) — professores e porteiros podem consultar alunos
+    pelo ID sem precisar de acesso total ao sistema.
+    """
+    if not data.ids:
+        return {'users': []}
+
+    result = await session.scalars(select(User).where(User.id.in_(data.ids)))
+    users_by_id = {u.id: u for u in result.all()}
+
+    # Preserva a ordem dos IDs fornecidos, ignorando inexistentes
+    ordered = [users_by_id[uid] for uid in data.ids if uid in users_by_id]
+    return {'users': ordered}
 
 
 # --------------------------------------------------------------------------- #
@@ -593,6 +642,7 @@ async def upload_student_avatar(
     return await _process_avatar_upload(student, file, session)
 
 
+'''
 # --------------------------------------------------------------------------- #
 # PATCH /users/{user_id}/profile — DT edita campos de perfil de aluno        #
 # --------------------------------------------------------------------------- #
@@ -644,6 +694,7 @@ async def update_student_profile(
     await session.commit()
     await session.refresh(student)
     return student
+'''
 
 
 # --------------------------------------------------------------------------- #

@@ -9,6 +9,7 @@ Hierarquia:
 """
 
 from datetime import datetime
+from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -19,6 +20,7 @@ class OccurrenceCreate(BaseModel):
     student_id: int
     title: str
     description: str
+    occurred_at: Optional[datetime] = None  # Se omitido, usa o momento atual
 
 
 class OccurrenceUpdate(BaseModel):
@@ -30,6 +32,7 @@ class OccurrenceUpdate(BaseModel):
     student_id: int | None = None
     title: str | None = None
     description: str | None = None
+    occurred_at: Optional[datetime] = None
 
 
 class OccurrencePublic(BaseModel):
@@ -40,6 +43,7 @@ class OccurrencePublic(BaseModel):
     student_id: int
     title: str
     description: str
+    occurred_at: Optional[datetime]  # None quando não informado
     created_at: datetime
     updated_at: datetime
 

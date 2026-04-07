@@ -432,7 +432,18 @@ async def create_override(
     data: OverrideCreate,
     session: Session,
 ):
-    # 1. Criar override (sem classroom_ids, pois é tabela de associação)
+    # 1. Validar teacher_id se fornecido
+    if data.teacher_id is not None:
+        from app.domains.users.models import User as _User
+
+        teacher_user = await session.get(_User, data.teacher_id)
+        if not teacher_user:
+            raise HTTPException(
+                status_code=HTTPStatus.NOT_FOUND,
+                detail='Teacher not found',
+            )
+
+    # 2. Criar override (sem classroom_ids, pois é tabela de associação)
     override = ScheduleOverride(**data.model_dump(exclude={'classroom_ids'}))
 
     session.add(override)

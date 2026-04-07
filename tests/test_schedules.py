@@ -180,16 +180,16 @@ def test_periods_exact_sequence():
 
 
 def test_periods_have_9_class_periods():
-    class_periods = [
-        p for p in PERIODS.periods if p.type.requires_teacher
-    ]
+    class_periods = [p for p in PERIODS.periods if p.type.requires_teacher]
     assert len(class_periods) == 9
 
 
 def test_no_class_period_during_lunch():
     for t in [time(12, 0), time(12, 30), time(13, 0), time(13, 19)]:
         period = get_current_period(t, PERIODS)
-        assert not (period is not None and period.type == PeriodTypeEnum.CLASS_PERIOD)
+        assert not (
+            period is not None and period.type == PeriodTypeEnum.CLASS_PERIOD
+        )
 
 
 def test_no_period_before_school():
@@ -230,7 +230,10 @@ def test_overlaps_midnight_crossing_false():
 
 def test_period_contains_midnight_true():
     p = Period(
-        type=PeriodTypeEnum.CLASS_PERIOD, period_number=1, start=time(23, 0), end=time(1, 0)
+        type=PeriodTypeEnum.CLASS_PERIOD,
+        period_number=1,
+        start=time(23, 0),
+        end=time(1, 0),
     )
     assert p.contains(time(23, 30)) is True
     assert p.contains(time(0, 30)) is True
@@ -238,7 +241,10 @@ def test_period_contains_midnight_true():
 
 def test_period_contains_midnight_false():
     p = Period(
-        type=PeriodTypeEnum.CLASS_PERIOD, period_number=1, start=time(23, 0), end=time(1, 0)
+        type=PeriodTypeEnum.CLASS_PERIOD,
+        period_number=1,
+        start=time(23, 0),
+        end=time(1, 0),
     )
     assert p.contains(time(2, 0)) is False
 
@@ -430,7 +436,9 @@ async def test_list_periods_authenticated(client, coordinator):
     resp = client.get('/schedules/periods', headers=_auth(coordinator))
     assert resp.status_code == HTTPStatus.OK
     class_periods = [
-        p for p in resp.json()['periods'] if p['type'] == PeriodTypeEnum.CLASS_PERIOD.value
+        p
+        for p in resp.json()['periods']
+        if p['type'] == PeriodTypeEnum.CLASS_PERIOD.value
     ]
     assert len(class_periods) == 9
 
@@ -968,6 +976,64 @@ async def test_create_override_porter_forbidden(client, session):
         headers=_auth(porter),
     )
     assert resp.status_code == HTTPStatus.FORBIDDEN
+
+
+@pytest.mark.asyncio
+async def test_create_override_with_teacher_id(client, coordinator, teacher):
+    """Override com teacher_id válido → 201 com teacher_id preenchido."""
+    resp = client.post(
+        '/schedules/overrides',
+        json={
+            'title': 'Substituição',
+            'override_date': '2026-06-01',
+            'starts_at': '07:30:00',
+            'ends_at': '12:00:00',
+            'affects_all': True,
+            'teacher_id': teacher.id,
+        },
+        headers=_auth(coordinator),
+    )
+    assert resp.status_code == HTTPStatus.CREATED
+    assert resp.json()['teacher_id'] == teacher.id
+
+
+@pytest.mark.asyncio
+async def test_create_override_with_invalid_teacher_id_404(
+    client, coordinator
+):
+    """teacher_id inexistente → 404."""
+    resp = client.post(
+        '/schedules/overrides',
+        json={
+            'title': 'X',
+            'override_date': '2026-06-01',
+            'starts_at': '07:00:00',
+            'ends_at': '12:00:00',
+            'affects_all': True,
+            'teacher_id': 99999,
+        },
+        headers=_auth(coordinator),
+    )
+    assert resp.status_code == HTTPStatus.NOT_FOUND
+    assert resp.json()['detail'] == 'Teacher not found'
+
+
+@pytest.mark.asyncio
+async def test_create_override_without_teacher_id_is_null(client, coordinator):
+    """teacher_id omitido → campo None na resposta."""
+    resp = client.post(
+        '/schedules/overrides',
+        json={
+            'title': 'Genérico',
+            'override_date': '2026-06-02',
+            'starts_at': '07:00:00',
+            'ends_at': '12:00:00',
+            'affects_all': True,
+        },
+        headers=_auth(coordinator),
+    )
+    assert resp.status_code == HTTPStatus.CREATED
+    assert resp.json()['teacher_id'] is None
 
 
 @pytest.mark.asyncio

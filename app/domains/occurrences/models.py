@@ -47,6 +47,12 @@ class Occurrence:
         default=None,
     )
 
+    # Horário em que a ocorrência aconteceu (definido pelo usuário)
+    occurred_at: Mapped[Optional[datetime]] = mapped_column(
+        nullable=True,
+        default=None,
+    )
+
     # Metadados
     created_at: Mapped[datetime] = mapped_column(
         init=False, server_default=func.now()

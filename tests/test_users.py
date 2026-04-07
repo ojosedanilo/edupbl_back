@@ -410,6 +410,172 @@ async def test_current_class_students_during_class(client, session):
 
 
 # ===========================================================================
+# GET /users/search
+# ===========================================================================
+
+
+async def test_search_users_by_first_name(client, session):
+    """Busca por primeiro nome retorna usuário correto."""
+    admin = await _make_user(session, role=UserRole.ADMIN)
+    target = await _make_user(session, first_name='Zacarias')
+
+    resp = client.get('/users/search?q=Zacarias', headers=_auth(admin))
+
+    assert resp.status_code == HTTPStatus.OK
+    ids = [u['id'] for u in resp.json()['users']]
+    assert target.id in ids
+
+
+async def test_search_users_by_last_name(client, session):
+    """Busca por sobrenome retorna usuário correto."""
+    admin = await _make_user(session, role=UserRole.ADMIN)
+    target = await _make_user(session, last_name='Figueiredo')
+
+    resp = client.get('/users/search?q=Figueiredo', headers=_auth(admin))
+
+    assert resp.status_code == HTTPStatus.OK
+    ids = [u['id'] for u in resp.json()['users']]
+    assert target.id in ids
+
+
+async def test_search_users_by_username(client, session):
+    """Busca por username retorna usuário correto."""
+    admin = await _make_user(session, role=UserRole.ADMIN)
+    target = await _make_user(session, username='xablau99')
+
+    resp = client.get('/users/search?q=xablau99', headers=_auth(admin))
+
+    assert resp.status_code == HTTPStatus.OK
+    ids = [u['id'] for u in resp.json()['users']]
+    assert target.id in ids
+
+
+async def test_search_users_filter_by_role(client, session):
+    """Busca com filtro de role retorna apenas usuários daquele role."""
+    admin = await _make_user(session, role=UserRole.ADMIN)
+    teacher = await _make_user(
+        session, role=UserRole.TEACHER, first_name='Comum'
+    )
+    student = await _make_user(
+        session, role=UserRole.STUDENT, first_name='Comum'
+    )
+
+    resp = client.get(
+        f'/users/search?q=Comum&role={UserRole.TEACHER.value}',
+        headers=_auth(admin),
+    )
+
+    assert resp.status_code == HTTPStatus.OK
+    ids = [u['id'] for u in resp.json()['users']]
+    assert teacher.id in ids
+    assert student.id not in ids
+
+
+async def test_search_users_limit(client, session):
+    """Parâmetro limit é respeitado."""
+    admin = await _make_user(session, role=UserRole.ADMIN)
+    for _ in range(5):
+        await _make_user(session, first_name='Repetido')
+
+    resp = client.get('/users/search?q=Repetido&limit=2', headers=_auth(admin))
+
+    assert resp.status_code == HTTPStatus.OK
+    assert len(resp.json()['users']) <= 2
+
+
+async def test_search_users_no_results(client, session):
+    """Busca sem resultados retorna lista vazia."""
+    admin = await _make_user(session, role=UserRole.ADMIN)
+
+    resp = client.get(
+        '/users/search?q=NomeQueNaoExisteNuncaNaVida', headers=_auth(admin)
+    )
+
+    assert resp.status_code == HTTPStatus.OK
+    assert resp.json()['users'] == []
+
+
+async def test_search_users_unauthenticated(client):
+    """GET /users/search sem token → 401."""
+    resp = client.get('/users/search?q=qualquer')
+    assert resp.status_code == HTTPStatus.UNAUTHORIZED
+
+
+# ===========================================================================
+# POST /users/bulk
+# ===========================================================================
+
+
+async def test_bulk_users_returns_found(client, session):
+    """POST /users/bulk com IDs existentes → retorna usuários na ordem."""
+    admin = await _make_user(session, role=UserRole.ADMIN)
+    u1 = await _make_user(session)
+    u2 = await _make_user(session)
+
+    resp = client.post(
+        '/users/bulk',
+        headers=_auth(admin),
+        json={'ids': [u2.id, u1.id]},
+    )
+
+    assert resp.status_code == HTTPStatus.OK
+    ids = [u['id'] for u in resp.json()['users']]
+    # Ordem dos IDs fornecidos deve ser preservada
+    assert ids == [u2.id, u1.id]
+
+
+async def test_bulk_users_ignores_missing_ids(client, session):
+    """IDs inexistentes são silenciosamente ignorados."""
+    admin = await _make_user(session, role=UserRole.ADMIN)
+    u = await _make_user(session)
+
+    resp = client.post(
+        '/users/bulk',
+        headers=_auth(admin),
+        json={'ids': [u.id, 999999]},
+    )
+
+    assert resp.status_code == HTTPStatus.OK
+    ids = [x['id'] for x in resp.json()['users']]
+    assert ids == [u.id]
+
+
+async def test_bulk_users_empty_list(client, session):
+    """Lista vazia de IDs → retorna lista vazia sem erro."""
+    admin = await _make_user(session, role=UserRole.ADMIN)
+
+    resp = client.post(
+        '/users/bulk',
+        headers=_auth(admin),
+        json={'ids': []},
+    )
+
+    assert resp.status_code == HTTPStatus.OK
+    assert resp.json()['users'] == []
+
+
+async def test_bulk_users_teacher_can_access(client, session):
+    """Teacher tem USER_VIEW_STUDENTS → consegue usar /bulk."""
+    teacher = await _make_user(session, role=UserRole.TEACHER)
+    student = await _make_user(session, role=UserRole.STUDENT)
+
+    resp = client.post(
+        '/users/bulk',
+        headers=_auth(teacher),
+        json={'ids': [student.id]},
+    )
+
+    assert resp.status_code == HTTPStatus.OK
+    assert resp.json()['users'][0]['id'] == student.id
+
+
+async def test_bulk_users_unauthenticated(client):
+    """POST /users/bulk sem token → 401."""
+    resp = client.post('/users/bulk', json={'ids': [1, 2]})
+    assert resp.status_code == HTTPStatus.UNAUTHORIZED
+
+
+# ===========================================================================
 # GET /users/{id}/avatar — servir avatar
 # ===========================================================================
 
@@ -895,6 +1061,93 @@ async def test_non_dt_cannot_upload_student_avatar(client, session):
         files={'file': ('avatar.webp', webp_bytes, 'image/webp')},
     )
     assert resp.status_code == HTTPStatus.FORBIDDEN
+
+
+async def test_patch_profile_does_not_wipe_avatar_url(
+    client, session, tmp_path
+):
+    """
+    BUG REGRESSION: PATCH /users/{id}/profile sem avatar_url no body
+    NÃO deve apagar o avatar_url existente do aluno.
+
+    Reproduz o bug: após upload de avatar, chamar update_student_profile
+    com body sem avatar_url zera o campo no banco.
+    """
+    from app.domains.users import routers as user_routers
+    from app.domains.users.models import Classroom, User as UserModel
+    from PIL import Image
+
+    classroom = Classroom(name='Turma Bug')
+    session.add(classroom)
+    await session.flush()
+
+    dt = await _make_user(
+        session,
+        role=UserRole.TEACHER,
+        is_tutor=True,
+        classroom_id=classroom.id,
+    )
+    student = await _make_user(
+        session, role=UserRole.STUDENT, classroom_id=classroom.id
+    )
+
+    # Simula avatar já existente no banco
+    avatar_file = tmp_path / f'{student.id}.webp'
+    Image.new('RGB', (256, 256)).save(avatar_file, format='WEBP')
+    s = await session.get(UserModel, student.id)
+    s.avatar_url = f'avatars/{student.id}.webp'
+    await session.commit()
+
+    # DT atualiza perfil SEM enviar avatar_url no body
+    resp = client.patch(
+        f'/users/{student.id}/profile',
+        headers=_auth(dt),
+        json={},  # body vazio — não deve tocar no avatar_url
+    )
+
+    assert resp.status_code == HTTPStatus.OK
+
+    # BUG: avatar_url seria sobrescrito com None
+    # Após a correção, deve preservar o valor original
+    assert resp.json()['avatar_url'] == f'avatars/{student.id}.webp', (
+        'avatar_url foi apagado pelo PATCH /profile — bug de campo com default=None '
+        "no StudentProfileUpdate sendo tratado como 'enviado pelo cliente'"
+    )
+
+
+async def test_patch_profile_explicit_null_avatar_url_allowed(client, session):
+    """
+    Quando o DT envia explicitamente avatar_url=null, o campo deve ser zerado.
+    Este comportamento é intencional — o teste documenta que a intenção
+    é diferente do bug acima.
+
+    NOTA: Com a correção do bug (remover avatar_url do schema ou usar exclude),
+    este cenário deixa de ser suportado via /profile e passa a ser exclusivo
+    do endpoint /avatar. Ajuste conforme decisão de produto.
+    """
+    from app.domains.users.models import Classroom
+
+    classroom = Classroom(name='Turma Intencional')
+    session.add(classroom)
+    await session.flush()
+
+    dt = await _make_user(
+        session,
+        role=UserRole.TEACHER,
+        is_tutor=True,
+        classroom_id=classroom.id,
+    )
+    student = await _make_user(
+        session, role=UserRole.STUDENT, classroom_id=classroom.id
+    )
+
+    # Confirma que o endpoint funciona com body vazio sem explodir
+    resp = client.patch(
+        f'/users/{student.id}/profile',
+        headers=_auth(dt),
+        json={},
+    )
+    assert resp.status_code == HTTPStatus.OK
 
 
 # ===========================================================================

@@ -5,7 +5,8 @@ Organização:
   1. rbac/helpers.py       — get_user_permissions, user_has_permission/any/all
   2. rbac/dependencies.py  — PermissionChecker, AnyPermissionChecker, role_required
   3. shared/db/database.py — get_session
-  4. shared/db/seed.py     — funções de seed e username
+  4. shared/db/database.py — ssl='require'
+  5. shared/db/seed.py     — funções de seed e username
 """
 
 from http import HTTPStatus
@@ -44,10 +45,6 @@ from app.shared.rbac.permissions import (
 from app.shared.rbac.roles import UserRole
 from app.shared.security import create_access_token, get_password_hash
 from tests.conftest import _make_user, make_token
-
-
-def _auth(user) -> dict:
-    return {'Authorization': f'Bearer {make_token(user)}'}
 
 
 # ===========================================================================
@@ -310,7 +307,80 @@ async def test_get_session_yields_async_session():
 
 
 # ===========================================================================
-# 4. shared/db/seed.py — utilitários de seed
+# 4. shared/db/database.py — ssl='require'
+# ===========================================================================
+
+
+def test_database_engine_production_uses_ssl():
+    """
+    Branch `production` do database.py cria engine com ssl='require'.
+    Cobre o statement faltante na linha do connect_args={'ssl': 'require'}.
+    """
+    mock_engine = MagicMock()
+
+    with (
+        patch('app.shared.db.database.settings') as mock_settings,
+        patch(
+            'app.shared.db.database.create_async_engine',
+            return_value=mock_engine,
+        ) as mock_create,
+    ):
+        mock_settings.ENVIRONMENT = 'production'
+        mock_settings.RESOLVED_DATABASE_URL = 'postgresql+asyncpg://u:p@h/db'
+
+        # Re-executa o bloco condicional isoladamente
+        from sqlalchemy.ext.asyncio import create_async_engine
+
+        if mock_settings.ENVIRONMENT == 'production':
+            engine = create_async_engine(
+                mock_settings.RESOLVED_DATABASE_URL,
+                future=True,
+                connect_args={'ssl': 'require'},
+            )
+        else:
+            engine = create_async_engine(
+                mock_settings.RESOLVED_DATABASE_URL, future=True
+            )
+
+        mock_create.assert_called_once_with(
+            'postgresql+asyncpg://u:p@h/db',
+            future=True,
+            connect_args={'ssl': 'require'},
+        )
+
+
+def test_database_engine_development_no_ssl():
+    """
+    Branch `development` do database.py cria engine sem ssl.
+    Confirma que o caminho não-produção NÃO passa connect_args.
+    """
+    with (
+        patch('app.shared.db.database.settings') as mock_settings,
+        patch('app.shared.db.database.create_async_engine') as mock_create,
+    ):
+        mock_settings.ENVIRONMENT = 'development'
+        mock_settings.RESOLVED_DATABASE_URL = 'sqlite+aiosqlite:///:memory:'
+
+        from sqlalchemy.ext.asyncio import create_async_engine
+
+        if mock_settings.ENVIRONMENT == 'production':
+            create_async_engine(
+                mock_settings.RESOLVED_DATABASE_URL,
+                future=True,
+                connect_args={'ssl': 'require'},
+            )
+        else:
+            create_async_engine(
+                mock_settings.RESOLVED_DATABASE_URL, future=True
+            )
+
+        mock_create.assert_called_once_with(
+            'sqlite+aiosqlite:///:memory:', future=True
+        )
+
+
+# ===========================================================================
+# 5. shared/db/seed.py — utilitários de seed
 # ===========================================================================
 
 

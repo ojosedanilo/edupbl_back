@@ -76,6 +76,8 @@ class OverrideCreate(BaseModel):
     ends_at: time
     affects_all: bool = True
     classroom_ids: list | None = None
+    # Professor/coordenador que cobre este horário (opcional)
+    teacher_id: int | None = None
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -91,6 +93,8 @@ class OverridePublic(BaseModel):
     # Default None permite model_validate() sem erro;
     # o router sobrepõe via model_copy().
     classroom_ids: list | None = None
+    # Professor/coordenador associado ao override (None = genérico)
+    teacher_id: int | None = None
     created_at: datetime
 
 
