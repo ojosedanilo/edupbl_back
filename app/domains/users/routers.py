@@ -358,6 +358,45 @@ async def list_current_class_students(
 
 
 # --------------------------------------------------------------------------- #
+# GET /users/search — Busca usuários por nome ou username                     #
+# --------------------------------------------------------------------------- #
+
+
+@router.get('/search',
+    response_model=UserList,
+    dependencies=[
+        Depends(
+            AnyPermissionChecker({
+                SystemPermissions.USER_VIEW_ALL,
+                SystemPermissions.USER_VIEW_OWN,
+                SystemPermissions.USER_VIEW_CHILD,
+            })
+        )
+    ],
+)
+async def search_users(
+    session: Session,
+    q: Annotated[str, Query(description="Termo de busca (nome ou username)")],
+    role: Annotated[UserRole | None, Query(description="Filtrar por papel")] = None,
+    limit: Annotated[int, Query(description="Limite de resultados", ge=1, le=50)] = 10,
+):
+    """Busca usuários por nome ou username. Usado para autocomplete."""
+    query = select(User).where(
+        or_(
+            User.first_name.ilike(f'%{q}%'),
+            User.last_name.ilike(f'%{q}%'),
+            User.username.ilike(f'%{q}%'),
+        )
+    )
+
+    if role:
+        query = query.where(User.role == role)
+
+    result = await session.scalars(query.limit(limit))
+    return {'users': result.all()}
+
+
+# --------------------------------------------------------------------------- #
 # GET /users/{user_id}/avatar — Servir avatar                                 #
 # --------------------------------------------------------------------------- #
 

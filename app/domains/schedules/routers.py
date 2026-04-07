@@ -510,3 +510,88 @@ async def delete_override(
 
     pub = OverridePublic.model_validate(override)
     return pub.model_copy(update={'classroom_ids': cids})
+
+
+'''
+# --------------------------------------------------------------------------- #
+# GET /schedules/current-lesson — Aula atual do professor logado             #
+# --------------------------------------------------------------------------- #
+
+
+@router.get(
+    '/current-lesson',
+    response_model=dict,
+    dependencies=[
+        Depends(
+            AnyPermissionChecker({
+                SystemPermissions.SCHEDULES_VIEW_ALL,
+                SystemPermissions.SCHEDULES_VIEW_OWN,
+            })
+        )
+    ],
+)
+async def get_current_lesson(
+    session: Session,
+    current_user: CurrentUser,
+):
+    """
+    Retorna informações da aula atual do professor logado.
+    Inclui turma, horário, etc., se estiver em período de aula.
+    """
+    from datetime import datetime
+
+    now = datetime.now().time()
+    teacher = await get_current_teacher(current_user.id, now, session)
+
+    if not teacher:
+        return {'in_class': False}
+
+    # Buscar o slot atual
+    current_period = get_current_period(now, PERIODS)
+    weekday = WeekdayEnum((date.today().weekday() + 1) % 7 + 1)
+
+    # Verificar override primeiro
+    schedule_override = await session.scalar(
+        select(ScheduleOverride)
+        .join(override_classrooms)
+        .where(
+            ScheduleOverride.date == date.today(),
+            ScheduleOverride.start_time <= now,
+            ScheduleOverride.end_time > now,
+            ScheduleOverride.teacher_id == current_user.id,
+        )
+    )
+
+    if schedule_override:
+        classroom_id = await session.scalar(
+            select(override_classrooms.c.classroom_id).where(
+                override_classrooms.c.override_id == schedule_override.id
+            )
+        )
+        return {
+            'in_class': True,
+            'classroom_id': classroom_id,
+            'period': current_period.dict() if current_period else None,
+            'weekday': weekday.value,
+        }
+
+    # Slot regular
+    slot = await session.scalar(
+        select(ScheduleSlot).where(
+            ScheduleSlot.teacher_id == current_user.id,
+            ScheduleSlot.weekday == weekday,
+            ScheduleSlot.start_time <= now,
+            ScheduleSlot.end_time > now,
+        )
+    )
+
+    if slot:
+        return {
+            'in_class': True,
+            'classroom_id': slot.classroom_id,
+            'period': current_period.dict() if current_period else None,
+            'weekday': weekday.value,
+        }
+
+    return {'in_class': False}
+'''
