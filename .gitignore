@@ -8,9 +8,15 @@ backend.zip
 .venv/
 
 # Dados reais — NUNCA commitar
-/data/usuarios/*.csv
-/data/usuarios/*.xlsx
-/data/usuarios/*.json
+/data/usuarios/**/*.csv
+/data/usuarios/**/*.xlsx
+/data/usuarios/**/*.json
+
+# Horários reais
+/data/horarios/**/*.csv
+/data/horarios/**/*.xlsx
+/data/horarios/**/*.json
+/data/horarios/informacoes/**
 
 # Imagens de seed fornecidas pelo usuário — contêm fotos reais
 /data/fotos/*
@@ -18,11 +24,6 @@ backend.zip
 
 # Avatares gerados em runtime pelo sistema — gerado, não versionado
 /data/avatars/
-
-# Horários reais
-/data/horarios/*.csv
-/data/horarios/*.xlsx
-/data/horarios/*.json
 
 # Variáveis de ambiente com segredos
 *.env
