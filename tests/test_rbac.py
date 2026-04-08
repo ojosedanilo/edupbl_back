@@ -10,7 +10,7 @@ Organização:
 """
 
 from http import HTTPStatus
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
@@ -319,28 +319,19 @@ def test_database_engine_production_uses_ssl():
     mock_engine = MagicMock()
 
     with (
-        patch('app.shared.db.database.settings') as mock_settings,
+        patch('app.core.settings.settings') as mock_settings,
         patch(
-            'app.shared.db.database.create_async_engine',
+            'sqlalchemy.ext.asyncio.create_async_engine',
             return_value=mock_engine,
         ) as mock_create,
     ):
         mock_settings.ENVIRONMENT = 'production'
         mock_settings.RESOLVED_DATABASE_URL = 'postgresql+asyncpg://u:p@h/db'
 
-        # Re-executa o bloco condicional isoladamente
-        from sqlalchemy.ext.asyncio import create_async_engine
+        import importlib
+        import app.shared.db.database as db_module
 
-        if mock_settings.ENVIRONMENT == 'production':
-            engine = create_async_engine(
-                mock_settings.RESOLVED_DATABASE_URL,
-                future=True,
-                connect_args={'ssl': 'require'},
-            )
-        else:
-            engine = create_async_engine(
-                mock_settings.RESOLVED_DATABASE_URL, future=True
-            )
+        importlib.reload(db_module)
 
         mock_create.assert_called_once_with(
             'postgresql+asyncpg://u:p@h/db',
@@ -355,24 +346,18 @@ def test_database_engine_development_no_ssl():
     Confirma que o caminho não-produção NÃO passa connect_args.
     """
     with (
-        patch('app.shared.db.database.settings') as mock_settings,
-        patch('app.shared.db.database.create_async_engine') as mock_create,
+        patch('app.core.settings.settings') as mock_settings,
+        patch(
+            'sqlalchemy.ext.asyncio.create_async_engine',
+        ) as mock_create,
     ):
         mock_settings.ENVIRONMENT = 'development'
         mock_settings.RESOLVED_DATABASE_URL = 'sqlite+aiosqlite:///:memory:'
 
-        from sqlalchemy.ext.asyncio import create_async_engine
+        import importlib
+        import app.shared.db.database as db_module
 
-        if mock_settings.ENVIRONMENT == 'production':
-            create_async_engine(
-                mock_settings.RESOLVED_DATABASE_URL,
-                future=True,
-                connect_args={'ssl': 'require'},
-            )
-        else:
-            create_async_engine(
-                mock_settings.RESOLVED_DATABASE_URL, future=True
-            )
+        importlib.reload(db_module)
 
         mock_create.assert_called_once_with(
             'sqlite+aiosqlite:///:memory:', future=True

@@ -1,222 +1,181 @@
-# Notificações — Guia Completo (E-mail e WhatsApp)
-
-> Como implementar notificações para pais, professores e coordenação no EduPBL.
+Deixa eu ler o projeto primeiro para entender o contexto antes de escrever qualquer plano.Tenho tudo que preciso. O plano atual menciona Twilio, mas você quer Neonize. Deixa eu entender o que é Neonize antes de escrever o novo plano:Tenho tudo que preciso. Agora vou escrever o plano atualizado:O plano é um documento para você ler e implementar no seu ritmo, então vou entregar como Markdown direto no chat — sem necessidade de arquivo extra.
 
 ---
 
-## Casos de uso
-
-### Ocorrências
-- Responsável é notificado quando professor registra uma ocorrência sobre o filho
-
-### Atrasos
-- Coordenação é notificada quando porteiro registra um atraso (pendente)
-- Professor DT e responsável são notificados quando coordenação aprova a entrada
-- Responsável é notificado quando entrada é rejeitada
-
-### Atestados (futuro)
-- Professor DT é notificado quando responsável envia atestado
-- Coordenação é notificada após validação do DT
-- Responsável é notificado sobre aprovação ou rejeição
+# Plano: Notificações por E-mail e WhatsApp (Neonize)
 
 ---
 
-## Opções de canal
+## Contexto e ponto de partida
 
-### Opção 1 — E-mail ✅ Recomendado para o MVP
+O backend já tem os ganchos no lugar certo. Os três placeholders em `app/domains/delays/notifications.py` (`notify_delay_registered`, `notify_delay_approved`, `notify_delay_rejected`) já são chamados nos routers de delays. Ocorrências ainda não têm placeholder — precisa ser adicionado. O campo `phone` já existe no model `User`. O que falta é preencher esses placeholders com lógica real.
 
-**Prós:** Simples de implementar, sem custo, sem risco de bloqueio, sem aprovação de templates, todos os usuários já têm e-mail institucional.
-
-**Contras:** Menos imediato que WhatsApp; pais podem não ver rápido.
-
-**Quando usar:** MVP e teste piloto. Depois que o fluxo estiver validado, migra para WhatsApp.
+A estratégia é: **e-mail primeiro, WhatsApp em paralelo com fallback**. Se o destinatário tem `phone` cadastrado, manda WhatsApp. Se não tem, manda e-mail. Os dois canais usam a mesma interface — o router nunca sabe qual canal está sendo usado.
 
 ---
 
-### Opção 2 — Twilio WhatsApp
+## Fase 1 — Infraestrutura compartilhada
 
-**Prós:** Mais fácil que a API oficial, boa documentação, sandbox gratuita para testes.
+### Passo 1 — Estrutura de arquivos
 
-**Contras:** Custo por mensagem (~R$ 0,20), templates precisam ser aprovados para produção.
-
-**Quando usar:** Depois do MVP, quando houver orçamento e o sistema estiver validado.
-
-**Link:** https://www.twilio.com/whatsapp
-
----
-
-### Opção 3 — WhatsApp Business API (Oficial)
-
-**Prós:** Canal oficial, estável, ideal para longo prazo.
-
-**Contras:** Precisa de conta Business verificada e CNPJ, templates precisam de aprovação do WhatsApp (pode levar semanas), custo (~R$ 0,10/mensagem), setup complexo.
-
-**Quando usar:** Produção de longo prazo, após validar com usuários reais.
-
----
-
-### Opção 4 — Baileys (Não-oficial) ⚠️
-
-**Prós:** Grátis, sem aprovação de templates.
-
-**Contras:** Risco real de ban do número, não é oficial, pode parar de funcionar a qualquer momento.
-
-**Nunca usar em produção.** Apenas para prototipagem pessoal e descartável.
-
----
-
-## Roadmap de notificações
-
-### Fase 1 — MVP: E-mail
-Implementação simples, sem custo, valida o fluxo de notificação.
-
-### Fase 2 — Twilio Sandbox
-WhatsApp para equipe interna (professores, coordenação) enquanto e-mail cobre os pais.
-
-### Fase 3 — Twilio Produção
-WhatsApp automatizado para todos, com templates customizados e monitoramento de entrega.
-
-### Fase 4 — WhatsApp Business API
-Conta oficial verificada, templates aprovados, custos otimizados para grande escala.
-
----
-
-## Implementação: E-mail (Fase 1)
-
-### Estrutura de arquivos
+Crie a seguinte hierarquia dentro de `app/shared/notifications/`:
 
 ```
 app/shared/notifications/
 ├── __init__.py
-├── email.py           ← Serviço de envio de e-mail
+├── dispatcher.py       ← ponto de entrada único (decide e-mail vs WhatsApp)
+├── email.py            ← envio via SMTP
+├── whatsapp.py         ← envio via Neonize
 └── templates/
-    ├── occurrence_created.txt
     ├── delay_registered.txt
     ├── delay_approved.txt
-    └── delay_rejected.txt
+    ├── delay_rejected.txt
+    └── occurrence_created.txt
 ```
 
-### Passo 1 — Configurar SMTP nas settings
+O `dispatcher.py` é a peça central: ele recebe os dados de quem notificar e decide qual canal usar. Os routers e o `delays/notifications.py` só importam do `dispatcher` — nunca de `email.py` ou `whatsapp.py` diretamente.
 
-Adicione em `app/core/settings.py` as variáveis: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` e `SMTP_FROM`. Todas lidas do `.env` — nunca hardcoded. O arquivo `.env.example` já deve documentar essas variáveis.
+### Passo 2 — Variáveis de ambiente
 
-**Provedor sugerido para a escola:** Gmail com uma conta dedicada (ex: `edupbl.notificacoes@gmail.com`) e App Password gerada nas configurações de segurança do Google. Simples e gratuito para o volume do MVP.
+Adicione em `settings.py` dois blocos novos de configuração, lidos do `.env`:
 
-### Passo 2 — Criar `email.py`
+**Bloco SMTP:**
+`SMTP_HOST`, `SMTP_PORT` (int, default 587), `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` (endereço remetente, ex: `edupbl.notificacoes@gmail.com`), `SMTP_ENABLED` (bool, default False para não explodir em dev sem configurar).
 
-O módulo deve ter:
-- Uma função genérica de baixo nível que recebe destinatário, assunto e corpo e faz o envio via SMTP
-- Funções de alto nível específicas para cada evento: `send_occurrence_notification(occurrence_id, db)`, `send_delay_registered_notification(delay_id, db)`, `send_delay_approved_notification(delay_id, db)`, `send_delay_rejected_notification(delay_id, db)`
-- As funções de alto nível buscam os dados necessários no banco (nome do aluno, e-mail do responsável, etc.) e montam a mensagem antes de chamar a função genérica
+**Bloco WhatsApp/Neonize:**
+`WHATSAPP_ENABLED` (bool, default False), `WHATSAPP_DB_PATH` (caminho do arquivo SQLite que o Neonize usa para persistir a sessão, ex: `data/whatsapp_session.db`), `WHATSAPP_DEVICE_NAME` (nome que aparece no WhatsApp ao conectar, ex: `EduPBL`).
+
+Documente todos no `.env.example` com valores de exemplo e comentários explicando cada um.
 
 ### Passo 3 — Templates de mensagem
 
-Use arquivos de texto simples em `templates/`. Sem HTML no MVP — texto puro é suficiente e mais fácil de manter. Cada template define assunto e corpo com marcadores que a função substitui pelos valores reais (ex: `{aluno_nome}`, `{data}`, `{link}`).
+Cada template é um arquivo `.txt` com marcadores `{campo}`. Defina um formato fixo para cada template: primeira linha é o assunto (para e-mail), linha em branco, depois o corpo. As funções de notificação lerão esses arquivos e farão `.format(**dados)` antes de enviar.
 
-### Passo 4 — Integrar nos routers
-
-Nos routers de occurrences e delays, substitua as chamadas aos placeholders de notificação pelas funções reais do módulo `email.py`. As funções são assíncronas — use `await`.
-
-### Passo 5 — Tratar erros de envio
-
-Erros de e-mail não devem cancelar a operação principal. Envolva a chamada de notificação em `try/except` e registre o erro em log, sem relançar a exceção. O atraso foi aprovado — isso não deve ser desfeito por falha no e-mail.
+Campos sugeridos por template:
+- `delay_registered.txt`: `{aluno_nome}`, `{turma}`, `{horario_chegada}`, `{horario_esperado}`, `{minutos_atraso}`, `{motivo}`, `{registrado_por}`
+- `delay_approved.txt`: `{aluno_nome}`, `{turma}`, `{data}`, `{aprovado_por}`
+- `delay_rejected.txt`: `{aluno_nome}`, `{turma}`, `{data}`, `{motivo_rejeicao}`
+- `occurrence_created.txt`: `{aluno_nome}`, `{titulo}`, `{descricao}`, `{data}`, `{registrado_por}`
 
 ---
 
-## Implementação: Twilio WhatsApp (Fase 2)
+## Fase 2 — Canal de e-mail
 
-### Pré-requisitos
+### Passo 4 — Criar `email.py`
 
-1. Criar conta em https://www.twilio.com/try-twilio
-2. Anotar `ACCOUNT_SID` e `AUTH_TOKEN`
-3. No dashboard: ir em Messaging → Try it out → Send a WhatsApp message
-4. Configurar o Sandbox: adicionar o número Twilio no WhatsApp pessoal e enviar o código de join
-5. Autorizar os números de teste que vão receber mensagens (até 5 no trial)
+O módulo tem duas camadas:
 
-### Configuração
+**Camada baixa:** uma função assíncrona `send_email(to: str, subject: str, body: str) -> None` que abre conexão SMTP com `aiosmtplib` (a versão async do smtplib — instale com `uv add aiosmtplib`), autentica com `SMTP_USER`/`SMTP_PASSWORD` e envia. Se `SMTP_ENABLED` for False, loga a mensagem e retorna sem enviar — útil para desenvolvimento.
 
-Adicione em `settings.py` as variáveis: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` e `TWILIO_WHATSAPP_FROM`. Lidas do `.env`.
+**Camada alta:** funções específicas por evento que recebem o `delay_id` ou `occurrence_id` e uma sessão do banco, buscam os dados necessários (nome do aluno, e-mail dos destinatários, campos do evento), renderizam o template e chamam `send_email`. Cada função sabe quem deve receber: a de `delay_registered` notifica a coordenação, a de `delay_approved` notifica o responsável e o professor DT, a de `delay_rejected` notifica o responsável, a de `occurrence_created` notifica o responsável.
 
-Instale o SDK com `uv add twilio`.
+Para buscar o professor DT de uma turma, use o helper `get_current_teacher` que já existe em `schedules`. Para buscar os responsáveis de um aluno, use o relacionamento `student.guardians` do model `User` — já existe como `relationship` many-to-many via `guardian_student`.
 
-### Estrutura
+### Passo 5 — Tratamento de erros
 
-Crie `app/shared/notifications/whatsapp.py` com o mesmo padrão do `email.py`: uma função genérica de baixo nível e funções específicas por evento.
-
-### Templates de mensagem
-
-O sandbox do Twilio não exige templates aprovados. Use mensagens diretas com os dados do evento. Para produção, crie templates na plataforma Twilio e aguarde aprovação antes de ativar.
+Todo envio de notificação deve ser envolvido em `try/except` com log de erro. A notificação é secundária — uma falha no envio não deve reverter a transação principal nem retornar erro HTTP para o cliente. Use o módulo `logging` padrão do Python, não `print`.
 
 ---
 
-## Obtendo os números de WhatsApp dos responsáveis
+## Fase 3 — Canal WhatsApp com Neonize
 
-### Opção A — Cadastro no primeiro acesso (recomendada)
+Neonize é construído sobre Whatsmeow (Go) e usa uma conexão real de WhatsApp — não a API Business oficial, não Twilio. Funciona como um cliente WhatsApp normal conectado via QR code. Tem suporte a `asyncio` via `neonize.aioze`.
 
-O campo `phone` (nullable, String 20) já existe na tabela `users` — migration `a3f2c1d8e9b0`. Após o primeiro login, o sistema exibe um formulário pedindo o número. O usuário preenche voluntariamente — em linha com a LGPD.
+**Importante antes de começar:** Neonize usa um número de WhatsApp real. Recomendado usar um número dedicado para a escola (chip separado), não o número pessoal. O risco de ban existe, mas é baixo para envio de mensagens transacionais de baixo volume.
 
-O campo é genérico (`phone`, não `whatsapp_phone`) para servir também a SMS ou chamadas, se necessário no futuro.
+### Passo 6 — Instalar e entender o ciclo de vida do Neonize
 
-### Opção B — Importar dos CSVs
+Instale com `uv add neonize`.
 
-Se os CSVs já tiverem o telefone dos responsáveis, inclua o campo `responsavel_telefone` no CSV de alunos ou em um CSV separado de responsáveis, e o script de importação o associa ao usuário.
+O Neonize não é stateless como uma chamada HTTP — ele mantém uma conexão persistente com os servidores do WhatsApp. Precisa ser inicializado uma vez no boot da aplicação e permanecer conectado enquanto a aplicação roda. O client usa um arquivo de banco de dados local (configurado em `WHATSAPP_DB_PATH`) para persistir a sessão entre reinicializações — depois do primeiro QR code, não precisa escanear de novo.
 
-### Opção C — Notificação progressiva
+### Passo 7 — Integrar o Neonize no lifespan do FastAPI
 
-Primeira notificação vai por e-mail com um link para o responsável cadastrar o número de WhatsApp. A partir da segunda notificação, usa WhatsApp se o número estiver cadastrado.
+No `app/main.py`, no bloco `lifespan`, inicialize o client do Neonize se `WHATSAPP_ENABLED` for True. O client deve ser armazenado em uma variável de estado da aplicação (`app.state.whatsapp_client`) para que os módulos de notificação possam acessá-lo depois.
 
----
+O fluxo de inicialização é: criar o `NewAClient` com o nome do dispositivo e o caminho do banco de dados, registrar um handler para o evento de QR code (que loga o QR no terminal para o operador escanear), registrar um handler para o evento de conexão estabelecida, e chamar `client.connect()` em uma task assíncrona separada (não `await` direto — isso bloquearia o boot). No encerramento (após o `yield`), desconecte o client.
 
-## Modelo de log de notificações (futuro)
+Na primeira inicialização, o QR code vai aparecer no log do servidor — o operador escaneia com o WhatsApp do número dedicado da escola. Nas próximas inicializações, a sessão já está salva no banco e conecta automaticamente.
 
-Para monitorar entregas e diagnosticar falhas, crie uma tabela `notifications` com os campos: `id`, `type` (occurrence/delay/certificate), `channel` (email/whatsapp), `recipient`, `status` (sent/delivered/failed), `sent_at`, `delivered_at`, `error_message`.
+### Passo 8 — Criar `whatsapp.py`
 
-Isso não é necessário no MVP — adicione quando o volume de notificações justificar o monitoramento.
+Mesma estrutura do `email.py`: uma função de baixo nível `send_whatsapp(phone: str, message: str) -> None` que recebe o número no formato E.164 (ex: `5585999990000`), usa `build_jid(phone)` do Neonize para construir o JID do destinatário, e chama `client.send_message(jid, text=message)`.
 
----
+Para acessar o client global, importe `app.state.whatsapp_client` — mas atenção ao ciclo de vida: valide que o client está conectado antes de tentar enviar. Se não estiver conectado, logue um aviso e retorne sem erro.
 
-## Estimativa de custos (WhatsApp)
+Funções de alto nível com mesma assinatura das do `email.py`, mas montando a mensagem em formato adequado para WhatsApp (texto corrido, sem assunto, pode usar emojis para deixar a mensagem mais clara).
 
-Para uma escola com 500 alunos, estimativa de volume mensal:
-- 50 ocorrências → 50 notificações
-- 200 atrasos → ~400 notificações (registro + aprovação/rejeição)
-- **Total: ~450 mensagens/mês**
+### Passo 9 — Formatar números de telefone
 
-| Canal                    | Custo estimado/mês |
-|--------------------------|--------------------|
-| E-mail (Gmail)           | Grátis             |
-| Twilio WhatsApp          | ~R$ 90             |
-| WhatsApp Business API    | ~R$ 45             |
+O campo `phone` no banco é livre (String 20). Antes de usar no Neonize, normalize o número: remova caracteres não numéricos, garanta que começa com o DDI do país (55 para Brasil). Crie uma função utilitária `normalize_phone(phone: str) -> str | None` em `app/shared/text_utils.py` (arquivo já existe) que faz essa normalização e retorna `None` se o número for inválido.
+
+Use `client.is_on_whatsapp([phone])` antes de enviar para verificar se o número está cadastrado no WhatsApp — evita falhas silenciosas quando o número existe mas não tem WhatsApp.
 
 ---
 
-## Segurança e LGPD
+## Fase 4 — Dispatcher e integração
 
-- Obtenha consentimento explícito antes de enviar mensagens WhatsApp
-- Ofereça opt-out (o usuário deve poder desativar notificações)
-- Não compartilhe números com terceiros
-- Armazene números no banco como dado pessoal sensível — documentado na política de privacidade da escola
+### Passo 10 — Criar `dispatcher.py`
+
+Este é o módulo que os routers chamam. Ele exporta as mesmas funções de alto nível: `notify_delay_registered`, `notify_delay_approved`, `notify_delay_rejected`, `notify_occurrence_created`.
+
+A lógica interna de cada função é: buscar os destinatários e seus dados, para cada destinatário verificar se tem `phone` — se sim, tentar WhatsApp (se `WHATSAPP_ENABLED`); se não tem `phone` ou WhatsApp falhar, tentar e-mail (se `SMTP_ENABLED`). Cada envio individual em `try/except` com log, sem propagar erros.
+
+### Passo 11 — Substituir os placeholders em `delays/notifications.py`
+
+Importe as funções do `dispatcher` e substitua os `pass` pelas chamadas reais. As funções do dispatcher precisam de acesso ao banco para buscar os dados — passe a sessão como parâmetro. Isso significa mudar a assinatura de `notify_delay_registered(delay_id: int)` para `notify_delay_registered(delay_id: int, session: AsyncSession)`, e ajustar as chamadas nos routers de delays de acordo.
+
+### Passo 12 — Adicionar placeholder de notificação em `occurrences/routers.py`
+
+Siga o mesmo padrão de `delays/routers.py`: crie `app/domains/occurrences/notifications.py` com `notify_occurrence_created(occurrence_id: int, session: AsyncSession)`, importe no router e chame após o `session.commit()` da criação de ocorrência.
 
 ---
 
-## Checklist de Implementação
+## Fase 5 — Testes
 
-**E-mail (MVP):**
-- [ ] Configurar variáveis SMTP no `.env` e no `.env.example`
-- [ ] Criar `app/shared/notifications/email.py`
-- [ ] Criar templates de texto em `templates/`
-- [ ] Substituir placeholders em `occurrences/routers.py`
-- [ ] Substituir placeholders em `delays/notifications.py`
-- [ ] Tratar erros de envio com try/except + log
-- [ ] Testar envio real com conta de teste
+### Passo 13 — Testes unitários dos módulos de notificação
 
-**WhatsApp — Twilio (Fase 2):**
-- [ ] Criar conta Twilio e configurar sandbox
-- [ ] Adicionar variáveis Twilio no `.env`
-- [ ] Instalar SDK (`uv add twilio`)
-- [x] Campo `phone` já existe no model `User` (migration `a3f2c1d8e9b0`)
-- [x] Migration já aplicada junto com `avatar_url`
-- [ ] Criar `app/shared/notifications/whatsapp.py`
-- [ ] Criar tela/endpoint para o responsável cadastrar o número
-- [ ] Substituir chamadas de e-mail por WhatsApp (ou paralelizar os dois)
-- [ ] Testar com números autorizados no sandbox
+Para `email.py`: mock do `aiosmtplib` e verifique que `send_email` é chamado com os parâmetros corretos; teste que erros de SMTP são capturados e logados sem propagar; teste que `SMTP_ENABLED=False` retorna sem chamar o SMTP.
+
+Para `whatsapp.py`: mock do `NewAClient` e verifique a chamada a `send_message`; teste a função `normalize_phone` com casos de borda (número com parênteses, traço, espaço, DDI ausente, DDI duplicado).
+
+Para `dispatcher.py`: teste que destinatário com `phone` usa WhatsApp, destinatário sem `phone` usa e-mail, e que falha no WhatsApp faz fallback para e-mail.
+
+### Passo 14 — Testes de integração nos routers existentes
+
+Os testes de delays já existem em `test_delays.py`. Adicione mocks para as funções do dispatcher nos testes de criação, aprovação e rejeição, verificando que o dispatcher é chamado com o `delay_id` correto. Não teste o envio real nos testes de integração — apenas que o dispatcher foi invocado.
+
+---
+
+## Checklist de implementação
+
+**Infraestrutura:**
+- [ ] Criar `app/shared/notifications/` com `__init__.py`
+- [ ] Adicionar variáveis SMTP e WhatsApp em `settings.py` e `.env.example`
+- [ ] Criar os 4 templates de texto em `notifications/templates/`
+
+**E-mail:**
+- [ ] Instalar `aiosmtplib` com `uv add aiosmtplib`
+- [ ] Criar `email.py` com camada baixa e camada alta
+- [ ] Testar envio real com conta Gmail de teste + App Password
+
+**WhatsApp (Neonize):**
+- [ ] Instalar `neonize` com `uv add neonize`
+- [ ] Adicionar inicialização do client no `lifespan` do `main.py`
+- [ ] Criar `whatsapp.py` com camada baixa e camada alta
+- [ ] Adicionar `normalize_phone` em `text_utils.py`
+- [ ] Testar conexão via QR code com número dedicado
+- [ ] Testar envio com número autorizado
+
+**Integração:**
+- [ ] Criar `dispatcher.py` com lógica de fallback
+- [ ] Atualizar assinaturas em `delays/notifications.py` para receber `session`
+- [ ] Ajustar chamadas nos routers de delays
+- [ ] Criar `occurrences/notifications.py` e plugar no router
+- [ ] Adicionar testes unitários e mocks nos testes de integração existentes
+
+---
+
+## Decisão de design que vale registrar
+
+O Neonize usa uma conexão persistente (não stateless), o que é uma diferença fundamental em relação ao Twilio. Isso significa que o servidor precisa estar rodando para que o WhatsApp funcione — não dá para enviar uma mensagem em um job isolado sem que o client esteja conectado. Se no futuro o backend rodar em múltiplas instâncias (horizontal scaling), o client do Neonize precisa estar em apenas uma delas, ou você move o canal de WhatsApp para um serviço separado. Para o volume atual da escola, uma única instância é mais do que suficiente — vale documentar essa limitação no `README` do backend.

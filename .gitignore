@@ -2,7 +2,7 @@
 /edupbl_backend.egg-info
 **/__pycache__
 .coverage
-backend.zip
+/*.zip
 
 # Ambiente virtual (gerado localmente pelo uv/venv)
 .venv/

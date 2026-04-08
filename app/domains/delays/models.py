@@ -50,7 +50,10 @@ class Delay:
 
     # Data do atraso — preenchida pelo banco com a data atual
     delay_date: Mapped[date] = mapped_column(
-        Date, init=False, server_default=func.current_date()
+        Date,
+        init=False,
+        default=date.today,
+        server_default=func.current_date(),
     )
     # Hora esperada para a chegada (07:30 fixo no MVP)
     expected_time: Mapped[time] = mapped_column(

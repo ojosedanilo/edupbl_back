@@ -46,7 +46,7 @@ from app.domains.schedules.periods import PERIODS
 from app.domains.users.models import User
 from app.domains.users.schemas import (
     PasswordChange,
-    # StudentProfileUpdate,
+    StudentProfileUpdate,
     # StudentSummary,
     StudentSummaryList,
     UserBulkRequest,
@@ -295,10 +295,7 @@ async def list_students_of_classroom(
     Requer USER_VIEW_STUDENTS. Ownership check: professor só acessa a própria
     classroom_id; coordinator, admin e porteiro acessam qualquer turma.
     """
-    is_restricted = current_user.role == UserRole.TEACHER and not (
-        current_user.role
-        in (UserRole.COORDINATOR, UserRole.ADMIN, UserRole.PORTER)
-    )
+    is_restricted = current_user.role == UserRole.TEACHER
     if is_restricted and current_user.classroom_id != classroom_id:
         raise HTTPException(
             status_code=HTTPStatus.FORBIDDEN,
@@ -642,7 +639,6 @@ async def upload_student_avatar(
     return await _process_avatar_upload(student, file, session)
 
 
-'''
 # --------------------------------------------------------------------------- #
 # PATCH /users/{user_id}/profile — DT edita campos de perfil de aluno        #
 # --------------------------------------------------------------------------- #
@@ -694,7 +690,6 @@ async def update_student_profile(
     await session.commit()
     await session.refresh(student)
     return student
-'''
 
 
 # --------------------------------------------------------------------------- #

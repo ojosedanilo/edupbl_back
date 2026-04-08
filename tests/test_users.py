@@ -1117,13 +1117,9 @@ async def test_patch_profile_does_not_wipe_avatar_url(
 
 async def test_patch_profile_explicit_null_avatar_url_allowed(client, session):
     """
-    Quando o DT envia explicitamente avatar_url=null, o campo deve ser zerado.
-    Este comportamento é intencional — o teste documenta que a intenção
-    é diferente do bug acima.
-
-    NOTA: Com a correção do bug (remover avatar_url do schema ou usar exclude),
-    este cenário deixa de ser suportado via /profile e passa a ser exclusivo
-    do endpoint /avatar. Ajuste conforme decisão de produto.
+    avatar_url foi removido do StudentProfileUpdate — o endpoint /profile
+    não gerencia mais avatar (responsabilidade do /avatar).
+    Confirma que body vazio não explode o endpoint.
     """
     from app.domains.users.models import Classroom
 
@@ -1176,7 +1172,7 @@ async def test_dt_update_student_profile_success(client, session):
     resp = client.patch(
         f'/users/{student.id}/profile',
         headers=_auth(dt),
-        json={'avatar_url': None},
+        json={'first_name': 'NomeAtualizado'},
     )
     assert resp.status_code == HTTPStatus.OK
 
@@ -1187,7 +1183,7 @@ async def test_dt_update_profile_user_not_found(client, session):
     resp = client.patch(
         '/users/9999/profile',
         headers=_auth(dt),
-        json={'avatar_url': None},
+        json={'first_name': None},
     )
     assert resp.status_code == HTTPStatus.NOT_FOUND
     assert resp.json()['detail'] == 'User not found'
@@ -1214,7 +1210,7 @@ async def test_dt_update_profile_not_student(client, session):
     resp = client.patch(
         f'/users/{teacher2.id}/profile',
         headers=_auth(dt),
-        json={'avatar_url': None},
+        json={'first_name': None},
     )
     assert resp.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
     assert 'perfil de alunos' in resp.json()['detail']
@@ -1239,7 +1235,7 @@ async def test_dt_update_profile_wrong_classroom(client, session):
     resp = client.patch(
         f'/users/{student.id}/profile',
         headers=_auth(dt),
-        json={'avatar_url': None},
+        json={'first_name': None},
     )
     assert resp.status_code == HTTPStatus.FORBIDDEN
     assert 'turma' in resp.json()['detail']

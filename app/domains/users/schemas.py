@@ -107,9 +107,13 @@ class StudentProfileUpdate(BaseModel):
     Escopo intencional restrito: o DT não deve alterar dados de autenticação
     (email, senha, username) nem dados administrativos (role, is_active) de
     alunos. Apenas informações de perfil que ele naturalmente gerencia.
+
+    avatar_url é gerenciado exclusivamente pelo endpoint PATCH /users/{id}/avatar.
     """
 
-    avatar_url: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    phone: str | None = None
 
 
 class PasswordChange(BaseModel):
