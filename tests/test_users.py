@@ -1475,3 +1475,105 @@ def test_schema_accepts_valid_username():
         last_name='Silva',
     )
     assert schema.username == 'joao.silva_99'
+
+
+# ===========================================================================
+# GET /users/classrooms — Lista todas as turmas
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_list_classrooms_returns_all_sorted(client, session):
+    """Admin recebe todas as turmas em ordem alfabética."""
+    from app.domains.users.models import Classroom
+
+    admin = await _make_user(session, role=UserRole.ADMIN)
+    c1 = Classroom(name='Turma B')
+    c2 = Classroom(name='Turma A')
+    c3 = Classroom(name='Turma C')
+    session.add_all([c1, c2, c3])
+    await session.commit()
+
+    resp = client.get('/users/classrooms', headers=_auth(admin))
+
+    assert resp.status_code == HTTPStatus.OK
+    data = resp.json()
+    names = [item['name'] for item in data]
+    # Deve vir em ordem alfabética
+    assert names == sorted(names)
+    # Todas as turmas criadas devem estar presentes
+    assert {'Turma A', 'Turma B', 'Turma C'}.issubset(set(names))
+
+
+@pytest.mark.asyncio
+async def test_list_classrooms_response_shape(client, session):
+    """Cada item retornado contém apenas 'id' e 'name'."""
+    from app.domains.users.models import Classroom
+
+    coord = await _make_user(session, role=UserRole.COORDINATOR)
+    c = Classroom(name='Turma Shape')
+    session.add(c)
+    await session.commit()
+    await session.refresh(c)
+
+    resp = client.get('/users/classrooms', headers=_auth(coord))
+
+    assert resp.status_code == HTTPStatus.OK
+    # Encontra a turma criada no resultado
+    match = next(
+        (item for item in resp.json() if item['name'] == 'Turma Shape'), None
+    )
+    assert match is not None
+    assert set(match.keys()) == {'id', 'name'}
+    assert match['id'] == c.id
+
+
+@pytest.mark.asyncio
+async def test_list_classrooms_empty(client, session):
+    """Endpoint retorna lista vazia quando não há turmas."""
+    teacher = await _make_user(session, role=UserRole.TEACHER)
+
+    resp = client.get('/users/classrooms', headers=_auth(teacher))
+
+    assert resp.status_code == HTTPStatus.OK
+    # Pode haver turmas residuais de outros testes; garante apenas que é lista
+    assert isinstance(resp.json(), list)
+
+
+# ---------------------------------------------------------------------------
+# Cobertura de permissão: quem PODE acessar
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'role',
+    [
+        UserRole.ADMIN,
+        UserRole.COORDINATOR,
+        UserRole.TEACHER,
+        UserRole.PORTER,
+        UserRole.STUDENT,
+        UserRole.GUARDIAN,
+    ],
+)
+async def test_list_classrooms_allowed_roles(client, session, role):
+    """
+    Qualquer role que possua SCHEDULES_VIEW_ALL, _OWN ou _CHILD deve receber 200.
+    Cobre: admin, coordinator, teacher, porter (VIEW_ALL),
+           student (VIEW_OWN), guardian (VIEW_CHILD).
+    """
+    user = await _make_user(session, role=role)
+    resp = client.get('/users/classrooms', headers=_auth(user))
+    assert resp.status_code == HTTPStatus.OK
+
+
+# ---------------------------------------------------------------------------
+# Rejeição de unauthenticated
+# ---------------------------------------------------------------------------
+
+
+def test_list_classrooms_unauthenticated(client):
+    """Requisição sem token deve ser recusada com 401."""
+    resp = client.get('/users/classrooms')
+    assert resp.status_code == HTTPStatus.UNAUTHORIZED

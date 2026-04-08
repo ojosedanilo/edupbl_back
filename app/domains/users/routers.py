@@ -43,7 +43,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.settings import AVATAR_DIR
 from app.domains.schedules.helpers import is_time_at_class_period
 from app.domains.schedules.periods import PERIODS
-from app.domains.users.models import User
+from app.domains.users.models import Classroom, User
 from app.domains.users.schemas import (
     PasswordChange,
     StudentProfileUpdate,
@@ -238,10 +238,15 @@ async def read_users(
     session: Session,
     filter_users: Annotated[FilterPage, Query()],
 ):
-    """Lista usuários com paginação via offset/limit. Acesso restrito a Admin e Coordinator."""
+    query = select(User)
+
+    if filter_users.role:
+        query = query.where(User.role == filter_users.role)
+
     result = await session.scalars(
-        select(User).offset(filter_users.offset).limit(filter_users.limit)
+        query.offset(filter_users.offset).limit(filter_users.limit)
     )
+
     return {'users': result.all()}
 
 
@@ -270,6 +275,36 @@ async def list_all_students(session: Session):
         .order_by(User.last_name)
     )
     return {'students': result.all()}
+
+
+# --------------------------------------------------------------------------- #
+# GET /users/classrooms — Lista todas as turmas                               #
+# --------------------------------------------------------------------------- #
+
+
+@router.get(
+    '/classrooms',
+    response_model=list[dict],
+    dependencies=[
+        Depends(
+            AnyPermissionChecker({
+                SystemPermissions.SCHEDULES_VIEW_ALL,
+                SystemPermissions.SCHEDULES_VIEW_OWN,
+                SystemPermissions.SCHEDULES_VIEW_CHILD,
+            })
+        )
+    ],
+)
+async def list_classrooms(session: Session):
+    """
+    Retorna lista de todas as turmas (id + name) em ordem alfabética.
+
+    Usado pelo frontend de horários para exibir o nome da turma em vez do ID.
+    Requer qualquer permissão de visualização de horários.
+    """
+    result = await session.scalars(select(Classroom).order_by(Classroom.name))
+    classrooms = result.all()
+    return [{'id': c.id, 'name': c.name} for c in classrooms]
 
 
 # --------------------------------------------------------------------------- #
