@@ -142,8 +142,10 @@ TUTOR_EXTRA_PERMISSIONS: set[SystemPermissions] = {
 }
 
 # Permissões base concedidas a TODOS os usuários, independentemente da role
+# NOTA: USER_EDIT nao entra aqui - é permissão privilegiada (admin/coord)
+# para editar *outros* usuarios. O auto-edit do proprio perfil (campo phone)
+# é controlado no backend pelo check current_user.id == user_id.
 _BASE_PERMISSIONS: set[SystemPermissions] = {
-    SystemPermissions.USER_EDIT,
     SystemPermissions.USER_VIEW_OWN,
     SystemPermissions.SUGGESTIONS_SUBMIT,
 }
