@@ -213,6 +213,19 @@ async def test_read_users_with_pagination(client, session, coordinator):
     assert len(resp.json()['users']) == 1
 
 
+async def test_read_users_filter_by_role(client, session, coordinator):
+    """GET /users/?role=student → retorna apenas usuários com aquela role."""
+    await _make_user(session, role=UserRole.STUDENT)
+    await _make_user(session, role=UserRole.STUDENT)
+    await _make_user(session, role=UserRole.TEACHER)
+
+    resp = client.get('/users/?role=student', headers=_auth(coordinator))
+    assert resp.status_code == HTTPStatus.OK
+    users = resp.json()['users']
+    assert len(users) == 2
+    assert all(u['role'] == UserRole.STUDENT.value for u in users)
+
+
 async def test_create_and_read_user(client, admin, coordinator):
     """POST /users/ + GET /users/ → novo usuário aparece na lista."""
     resp = client.post(

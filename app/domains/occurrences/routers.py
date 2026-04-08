@@ -26,6 +26,7 @@ from app.domains.occurrences.schemas import (
 )
 from app.domains.users.models import User
 from app.shared.db.database import get_session
+from app.shared.notifications.dispatcher import notify_occurrence_created
 from app.shared.rbac.dependencies import PermissionChecker
 from app.shared.rbac.permissions import SystemPermissions
 from app.shared.rbac.roles import UserRole
@@ -102,11 +103,14 @@ async def create_occurrence(
         student_id=data.student_id,
         title=data.title,
         description=data.description,
+        occurrence_type=data.occurrence_type,
     )
 
     session.add(occurrence)
     await session.commit()
     await session.refresh(occurrence)
+
+    await notify_occurrence_created(occurrence.id)
     return occurrence
 
 

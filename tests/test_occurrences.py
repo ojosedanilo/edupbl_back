@@ -15,6 +15,7 @@ from types import SimpleNamespace
 
 import pytest_asyncio
 
+from app.domains.occurrences.enums import OccurrenceTypeEnum
 from app.domains.occurrences.models import Occurrence
 from app.shared.rbac.roles import UserRole
 from app.shared.security import create_access_token
@@ -74,6 +75,24 @@ async def occurrence(client, teacher, student):
             'student_id': student.id,
             'title': 'Comportamento inadequado',
             'description': 'Detalhes da ocorrência.',
+            # occurrence_type omitido — deve usar o default OUTROS
+        },
+    )
+    assert resp.status_code == HTTPStatus.CREATED
+    return SimpleNamespace(**resp.json())
+
+
+@pytest_asyncio.fixture
+async def occurrence_indisciplina(client, teacher, student):
+    """Ocorrência com tipo explícito INDISCIPLINA."""
+    resp = client.post(
+        '/occurrences/',
+        headers=_auth(teacher),
+        json={
+            'student_id': student.id,
+            'title': 'Briga em sala',
+            'description': 'Detalhe.',
+            'occurrence_type': OccurrenceTypeEnum.INDISCIPLINA.value,
         },
     )
     assert resp.status_code == HTTPStatus.CREATED
@@ -88,6 +107,7 @@ async def occurrence_db(session, teacher, student):
         student_id=student.id,
         title='Indisciplina',
         description='Detalhe',
+        occurrence_type=OccurrenceTypeEnum.INDISCIPLINA,
     )
     session.add(occ)
     await session.commit()
@@ -96,12 +116,12 @@ async def occurrence_db(session, teacher, student):
 
 
 # ===========================================================================
-# POST /occurrences/
+# POST /occurrences/ — criação
 # ===========================================================================
 
 
 def test_create_occurrence_returns_full_object(client, teacher, student):
-    """POST bem-sucedido → 201 com todos os campos preenchidos."""
+    """POST bem-sucedido → 201 com todos os campos, incluindo occurrence_type."""
     resp = client.post(
         '/occurrences/',
         headers=_auth(teacher),
@@ -117,6 +137,72 @@ def test_create_occurrence_returns_full_object(client, teacher, student):
     assert data['student_id'] == student.id
     assert data['created_by_id'] == teacher.id
     assert data['title'] == 'Atraso'
+    assert data['occurrence_type'] == OccurrenceTypeEnum.OUTROS.value
+
+
+def test_create_occurrence_with_explicit_type(client, teacher, student):
+    """POST com occurrence_type explícito → tipo salvo corretamente."""
+    resp = client.post(
+        '/occurrences/',
+        headers=_auth(teacher),
+        json={
+            'student_id': student.id,
+            'title': 'Uso indevido',
+            'description': 'Celular em prova.',
+            'occurrence_type': OccurrenceTypeEnum.CELULAR.value,
+        },
+    )
+    assert resp.status_code == HTTPStatus.CREATED
+    assert resp.json()['occurrence_type'] == OccurrenceTypeEnum.CELULAR.value
+
+
+def test_create_occurrence_default_type_is_outros(client, teacher, student):
+    """POST sem occurrence_type → default é OUTROS."""
+    resp = client.post(
+        '/occurrences/',
+        headers=_auth(teacher),
+        json={
+            'student_id': student.id,
+            'title': 'Ocorrência genérica',
+            'description': 'Sem tipo específico.',
+        },
+    )
+    assert resp.status_code == HTTPStatus.CREATED
+    assert resp.json()['occurrence_type'] == OccurrenceTypeEnum.OUTROS.value
+
+
+def test_create_occurrence_all_types_accepted(client, teacher, student):
+    """Todos os sete tipos são aceitos sem erro."""
+    for occurrence_type in OccurrenceTypeEnum:
+        resp = client.post(
+            '/occurrences/',
+            headers=_auth(teacher),
+            json={
+                'student_id': student.id,
+                'title': f'Teste tipo {occurrence_type.value}',
+                'description': 'Descrição.',
+                'occurrence_type': occurrence_type.value,
+            },
+        )
+        assert resp.status_code == HTTPStatus.CREATED, (
+            f'Tipo {occurrence_type.value} foi rejeitado'
+        )
+        assert resp.json()['occurrence_type'] == occurrence_type.value
+
+
+def test_create_occurrence_invalid_type_rejected(client, teacher, student):
+    """occurrence_type inválido → 422 Unprocessable Entity."""
+    resp = client.post(
+        '/occurrences/',
+        headers=_auth(teacher),
+        json={
+            'student_id': student.id,
+            'title': 'Título',
+            'description': 'Desc.',
+            'occurrence_type': 'tipo_inventado',
+        },
+    )
+    assert resp.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
 
 
 def test_create_occurrence_student_not_found(client, teacher):
@@ -138,6 +224,7 @@ async def test_create_occurrence_success_async(client, teacher, student):
             'student_id': student.id,
             'title': 'Briga',
             'description': 'Detalhes',
+            'occurrence_type': OccurrenceTypeEnum.DESRESPEITO.value,
         },
         headers=_auth(teacher),
     )
@@ -145,6 +232,7 @@ async def test_create_occurrence_success_async(client, teacher, student):
     body = resp.json()
     assert body['title'] == 'Briga'
     assert body['created_by_id'] == teacher.id
+    assert body['occurrence_type'] == OccurrenceTypeEnum.DESRESPEITO.value
 
 
 # ===========================================================================
@@ -158,6 +246,16 @@ def test_list_occurrences_coordinator(client, coordinator, occurrence):
     assert resp.status_code == HTTPStatus.OK
     ids = [o['id'] for o in resp.json()['occurrences']]
     assert occurrence.id in ids
+
+
+def test_list_occurrences_includes_occurrence_type(
+    client, coordinator, occurrence, occurrence_indisciplina
+):
+    """Listagem retorna occurrence_type em cada item."""
+    resp = client.get('/occurrences/', headers=_auth(coordinator))
+    assert resp.status_code == HTTPStatus.OK
+    occurrences = resp.json()['occurrences']
+    assert all('occurrence_type' in o for o in occurrences)
 
 
 def test_list_occurrences_empty(client, coordinator):
@@ -249,10 +347,12 @@ def test_get_occurrence_not_found(client, teacher):
 
 
 def test_get_occurrence_student_sees_own(client, student, occurrence):
-    """Aluno pode ver a própria ocorrência → 200."""
+    """Aluno pode ver a própria ocorrência → 200 com occurrence_type."""
     resp = client.get(f'/occurrences/{occurrence.id}', headers=_auth(student))
     assert resp.status_code == HTTPStatus.OK
-    assert resp.json()['id'] == occurrence.id
+    data = resp.json()
+    assert data['id'] == occurrence.id
+    assert 'occurrence_type' in data
 
 
 def test_get_occurrence_student_forbidden_other(client, student2, occurrence):
@@ -266,6 +366,19 @@ def test_get_occurrence_teacher_sees_any(client, teacher, occurrence):
     resp = client.get(f'/occurrences/{occurrence.id}', headers=_auth(teacher))
     assert resp.status_code == HTTPStatus.OK
     assert resp.json()['title'] == occurrence.title
+
+
+def test_get_occurrence_returns_correct_type(
+    client, teacher, occurrence_indisciplina
+):
+    """Detalhe retorna o tipo correto da ocorrência."""
+    resp = client.get(
+        f'/occurrences/{occurrence_indisciplina.id}', headers=_auth(teacher)
+    )
+    assert resp.status_code == HTTPStatus.OK
+    assert (
+        resp.json()['occurrence_type'] == OccurrenceTypeEnum.INDISCIPLINA.value
+    )
 
 
 async def test_get_occurrence_coordinator_async(
@@ -337,6 +450,21 @@ def test_update_occurrence_success(client, teacher, occurrence):
     data = resp.json()
     assert data['title'] == 'Título novo'
     assert data['description'] == 'Descrição nova'
+    # occurrence_type não foi enviado — deve permanecer inalterado
+    assert data['occurrence_type'] == OccurrenceTypeEnum.OUTROS.value
+
+
+def test_update_occurrence_type(client, teacher, occurrence):
+    """Professor pode alterar o tipo da ocorrência → 200 com novo tipo."""
+    resp = client.put(
+        f'/occurrences/{occurrence.id}',
+        headers=_auth(teacher),
+        json={'occurrence_type': OccurrenceTypeEnum.RENDIMENTO.value},
+    )
+    assert resp.status_code == HTTPStatus.OK
+    assert (
+        resp.json()['occurrence_type'] == OccurrenceTypeEnum.RENDIMENTO.value
+    )
 
 
 def test_update_occurrence_coordinator(client, coordinator, occurrence):
@@ -348,6 +476,16 @@ def test_update_occurrence_coordinator(client, coordinator, occurrence):
     )
     assert resp.status_code == HTTPStatus.OK
     assert resp.json()['description'] == 'Atualizado pelo coordenador'
+
+
+def test_update_occurrence_invalid_type_rejected(client, teacher, occurrence):
+    """PUT com occurrence_type inválido → 422."""
+    resp = client.put(
+        f'/occurrences/{occurrence.id}',
+        headers=_auth(teacher),
+        json={'occurrence_type': 'tipo_inexistente'},
+    )
+    assert resp.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
 
 
 async def test_update_occurrence_success_async(client, teacher, occurrence_db):
@@ -413,7 +551,10 @@ def test_delete_occurrence_teacher_success(client, teacher, occurrence):
         f'/occurrences/{occurrence.id}', headers=_auth(teacher)
     )
     assert resp.status_code == HTTPStatus.OK
-    assert resp.json()['id'] == occurrence.id
+    data = resp.json()
+    assert data['id'] == occurrence.id
+    # Resposta do delete também deve conter occurrence_type
+    assert 'occurrence_type' in data
 
 
 def test_delete_occurrence_coordinator(client, coordinator, occurrence):

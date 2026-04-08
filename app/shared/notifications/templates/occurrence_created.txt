@@ -1,0 +1,12 @@
+Nova ocorrência - {aluno_nome}
+
+{saudacao},
+
+Uma nova ocorrência foi registrada para o(a) aluno(a) {aluno_nome}.
+
+- Título: {titulo}
+- Tipo: {tipo}
+- Descrição: {descricao}
+- Data: {data}
+
+Registrada por: {registrado_por}

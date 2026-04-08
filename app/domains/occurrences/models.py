@@ -15,9 +15,10 @@ Nota sobre relacionamentos:
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import ForeignKey, String, Text, func
+from sqlalchemy import Enum, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_as_dataclass, mapped_column
 
+from app.domains.occurrences.enums import OccurrenceTypeEnum
 from app.shared.db.registry import mapper_registry
 
 
@@ -39,6 +40,13 @@ class Occurrence:
 
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # Tipo da ocorrência — determina a categoria do problema registrado
+    occurrence_type: Mapped[OccurrenceTypeEnum] = mapped_column(
+        Enum(OccurrenceTypeEnum, name='occurrence_type'),
+        nullable=False,
+        default=OccurrenceTypeEnum.OUTROS,
+    )
 
     # Quem registrou (professor/coordenador) — vira NULL se o criador for deletado
     created_by_id: Mapped[Optional[int]] = mapped_column(
