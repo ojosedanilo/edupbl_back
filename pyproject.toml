@@ -32,6 +32,7 @@ dev = [
     "factory-boy (>=3.3.3,<4.0.0)",
     "freezegun (>=1.5.5,<2.0.0)",
     "testcontainers (>=4.14.1,<5.0.0)",
+    "git-archive-all>=1.23.1",
 ]
 
 [tool.ruff]
@@ -66,6 +67,7 @@ test_all = 'pytest -vv -rA -n auto --cov=app --cov-report=term-missing --cov-rep
 test_resume = 'pytest -q -rA -n auto --tb=no'
 coverage = 'pytest -q --cov=app --cov-report=term-missing'
 post_test = 'coverage html'
+archive = "python scripts/archive.py"
 
 [build-system]
 requires = ["hatchling"]
