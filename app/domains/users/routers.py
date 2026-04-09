@@ -778,6 +778,49 @@ async def deactivate_user(
 
 
 # --------------------------------------------------------------------------- #
+# PATCH /users/{user_id}/reactivate — Reativar usuário                       #
+# --------------------------------------------------------------------------- #
+
+
+@router.patch(
+    '/{user_id}/reactivate',
+    response_model=Message,
+    dependencies=[Depends(PermissionChecker({SystemPermissions.USER_DELETE}))],
+)
+async def reactivate_user(
+    session: Session,
+    current_user: CurrentUser,
+    user_id: int = FPath(alias='user_id'),
+):
+    """
+    Reativa um usuário previamente desativado (is_active = True).
+
+    Requer USER_DELETE (Admin ou Coordinator).
+    """
+    if current_user.id == user_id:
+        raise HTTPException(
+            status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
+            detail='Não é possível reativar a si mesmo por esta rota',
+        )
+
+    target = await session.get(User, user_id)
+    if not target:
+        raise HTTPException(
+            status_code=HTTPStatus.NOT_FOUND, detail='User not found'
+        )
+
+    if target.is_active:
+        raise HTTPException(
+            status_code=HTTPStatus.CONFLICT,
+            detail='Usuário já está ativo',
+        )
+
+    target.is_active = True
+    await session.commit()
+    return {'message': 'User reactivated successfully'}
+
+
+# --------------------------------------------------------------------------- #
 # DELETE /users/{user_id} — Deletar usuário                                  #
 # --------------------------------------------------------------------------- #
 

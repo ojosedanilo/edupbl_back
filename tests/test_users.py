@@ -1426,7 +1426,7 @@ async def test_delete_user_removes_avatar_from_disk(client, session, tmp_path):
 
     assert resp.status_code == HTTPStatus.OK
     assert not avatar_file.exists(), (
-        'Avatar deve ser removido do disco ao deletar usuário'
+        'Avatar deve ser removido do disco ao apagar usuário'
     )
 
 

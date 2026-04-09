@@ -236,7 +236,7 @@ async def update_occurrence(
 
 
 # --------------------------------------------------------------------------- #
-# DELETE /occurrences/{id} — Deletar ocorrência                             #
+# DELETE /occurrences/{id} — Apagar ocorrência                             #
 # --------------------------------------------------------------------------- #
 
 
@@ -255,7 +255,7 @@ async def delete_occurrence(
     """
     Deleta permanentemente uma ocorrência.
 
-    Professores só podem deletar ocorrências que eles próprios criaram.
+    Professores só podem apagar ocorrências que eles próprios criaram.
     O refresh antes do delete garante que todos os campos estejam
     carregados para a resposta final.
     """

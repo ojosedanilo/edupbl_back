@@ -129,7 +129,7 @@ class User:
 
     # ── Turma ──────────────────────────────────────────────────────── #
     # Obrigatório para alunos e professores DT; NULL para os demais.
-    # SET NULL ao deletar a turma preserva o usuário sem turma vinculada.
+    # SET NULL ao apagar a turma preserva o usuário sem turma vinculada.
     classroom_id: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey('classrooms.id', ondelete='SET NULL'),

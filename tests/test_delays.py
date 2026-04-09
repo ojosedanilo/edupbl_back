@@ -161,7 +161,7 @@ async def delay_db(session, porter, student):
 
     delay = Delay(
         student_id=student.id,
-        registered_by_id=porter.id,
+        recorded_by_id=porter.id,
         arrival_time=time(7, 45),
         delay_minutes=15,
     )
@@ -187,7 +187,7 @@ def test_create_delay_returns_full_object(client, porter, student):
     data = resp.json()
     assert data['id'] is not None
     assert data['student_id'] == student.id
-    assert data['registered_by_id'] == porter.id
+    assert data['recorded_by_id'] == porter.id
     assert data['approved_by_id'] is None
     assert data['status'] == DelayStatusEnum.PENDING
     assert data['arrival_time'] == '07:45:00'

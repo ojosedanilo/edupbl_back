@@ -32,7 +32,7 @@ class Occurrence:
         init=False, primary_key=True, nullable=False
     )
 
-    # Aluno envolvido — deletar o aluno deleta também suas ocorrências
+    # Aluno envolvido — apagar o aluno deleta também suas ocorrências
     student_id: Mapped[int] = mapped_column(
         ForeignKey('users.id', ondelete='CASCADE'),
         nullable=False,

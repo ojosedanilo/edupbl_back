@@ -3,11 +3,11 @@ Testes de schedules/ — suite completa.
 
 Organização:
   1. Unitários (sem banco)   — períodos, overlaps, Period.contains
-  2. CRUD de slots           — criar, 409, editar, deletar
+  2. CRUD de slots           — criar, 409, editar, apagar
   3. Leitura de grade        — /classroom, /teacher, /current-teacher
   4. Controle de acesso      — RBAC + regras por role (guardian, student, porter)
   5. Helper get_current_teacher — integração com banco
-  6. Overrides               — criar, listar (affects_all e específico), deletar
+  6. Overrides               — criar, listar (affects_all e específico), apagar
   7. Unitário de rota        — _check_classroom_access sem nenhuma permissão
 """
 
@@ -897,7 +897,7 @@ async def test_helper_specific_override_blocks_target_class(
 
 
 # ===========================================================================
-# 6. Overrides — criar, listar, deletar via HTTP
+# 6. Overrides — criar, listar, apagar via HTTP
 # ===========================================================================
 
 
@@ -1076,7 +1076,7 @@ async def test_delete_override_affects_all(client, coordinator):
     r = client.post(
         '/schedules/overrides',
         json={
-            'title': 'Para Deletar',
+            'title': 'Para Apagar',
             'override_date': '2026-07-01',
             'starts_at': '07:00:00',
             'ends_at': '17:00:00',

@@ -144,8 +144,10 @@ async def create_delay(
             detail='User is not a student',
         )
 
-    # Data do atraso: usa a fornecida; limita a 3 dias no passado
-    target_date = data.delay_date
+    # Data do atraso: usa a fornecida ou hoje como padrão; limita a 3 dias no passado
+    target_date = (
+        data.delay_date if data.delay_date is not None else date.today()
+    )
     min_date = date.today() - timedelta(days=3)
     if target_date < min_date or target_date > date.today():
         raise HTTPException(
