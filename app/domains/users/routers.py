@@ -62,6 +62,7 @@ from app.shared.rbac.dependencies import (
     AnyPermissionChecker,
     PermissionChecker,
 )
+from app.shared.rbac.helpers import user_has_permission
 from app.shared.rbac.permissions import SystemPermissions
 from app.shared.rbac.roles import UserRole
 from app.shared.schemas import FilterPage, Message
@@ -579,6 +580,66 @@ async def update_user(
     await session.commit()
     await session.refresh(current_user)
     return current_user
+
+
+# --------------------------------------------------------------------------- #
+# PATCH /users/{user_id}/admin-update — Atualização Admin/Coordinator        #
+# --------------------------------------------------------------------------- #
+
+
+@router.patch(
+    '/{user_id}/admin-update',
+    response_model=UserPublic,
+    dependencies=[Depends(PermissionChecker({SystemPermissions.USER_EDIT}))],
+)
+async def admin_update_user(
+    data: AdminUserUpdate,
+    session: Session,
+    current_user: CurrentUser,
+    user_id: int = FPath(alias='user_id'),
+):
+    """
+    Atualização privilegiada de usuário por Admin/Coordinator.
+
+    Permite editar qualquer campo de qualquer usuário, incluindo role,
+    is_tutor e classroom_id. A alteração de role requer USER_CHANGE_ROLE
+    (Admin); Coordenadores têm USER_EDIT mas não USER_CHANGE_ROLE.
+    """
+    target = await session.get(User, user_id)
+    if not target:
+        raise HTTPException(
+            status_code=HTTPStatus.NOT_FOUND, detail='User not found'
+        )
+
+    # Role change requires USER_CHANGE_ROLE (Admin only)
+    if data.role is not None and not user_has_permission(
+        current_user, SystemPermissions.USER_CHANGE_ROLE
+    ):
+        raise HTTPException(
+            status_code=HTTPStatus.FORBIDDEN,
+            detail='Changing role requires admin privileges',
+        )
+
+    # Check email/username conflicts
+    if data.username is not None or data.email is not None:
+        conditions = []
+        if data.username is not None:
+            conditions.append(User.username == data.username)
+        if data.email is not None:
+            conditions.append(User.email == data.email)
+        conflict = await session.scalar(select(User).where(or_(*conditions)))
+        if conflict and conflict.id != user_id:
+            raise HTTPException(
+                status_code=HTTPStatus.CONFLICT,
+                detail='Username or Email already exists',
+            )
+
+    for field, value in data.model_dump(exclude_unset=True).items():
+        setattr(target, field, value)
+
+    await session.commit()
+    await session.refresh(target)
+    return target
 
 
 # --------------------------------------------------------------------------- #
