@@ -693,6 +693,36 @@ async def change_my_password(
 
 
 # --------------------------------------------------------------------------- #
+# PATCH /users/{user_id}/admin-avatar — Admin/Coord faz upload de avatar     #
+# --------------------------------------------------------------------------- #
+
+
+@router.patch(
+    '/{user_id}/admin-avatar',
+    response_model=UserPublic,
+    dependencies=[Depends(PermissionChecker({SystemPermissions.USER_EDIT}))],
+)
+async def upload_user_avatar_admin(
+    session: Session,
+    current_user: CurrentUser,  # noqa: ARG001
+    user_id: int = FPath(alias='user_id'),
+    file: UploadFile = File(...),
+):
+    """
+    Admin/Coordinator faz upload do avatar de qualquer usuário.
+
+    Requer USER_EDIT. Sem restrição de turma ou role.
+    """
+    target = await session.get(User, user_id)
+    if not target:
+        raise HTTPException(
+            status_code=HTTPStatus.NOT_FOUND, detail='User not found'
+        )
+
+    return await _process_avatar_upload(target, file, session)
+
+
+# --------------------------------------------------------------------------- #
 # PATCH /users/{user_id}/avatar — DT faz upload de avatar de aluno da turma #
 # --------------------------------------------------------------------------- #
 
