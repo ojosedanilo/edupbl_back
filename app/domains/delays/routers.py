@@ -29,7 +29,7 @@ from app.domains.delays.schemas import (
     DelayPublic,
     DelayReject,
 )
-from app.domains.users.models import User, guardian_student
+from app.domains.users.models import User, active_users, guardian_student
 from app.shared.db.database import get_session
 from app.shared.notifications.dispatcher import (
     notify_delay_approved,
@@ -130,8 +130,10 @@ async def create_delay(
     expected_time é calculado automaticamente com base no período vigente
     no momento da chegada (derivado da configuração de schedules).
     """
-    # Verifica se o aluno existe
-    student = await session.get(User, data.student_id)
+    # Verifica se o aluno existe e está ativo
+    student = await session.scalar(
+        active_users().where(User.id == data.student_id)
+    )
     if not student:
         raise HTTPException(
             status_code=HTTPStatus.NOT_FOUND, detail='Student not found'
@@ -309,8 +311,6 @@ async def get_delay(
                 detail='Insufficient permissions',
             )
         return delay
-
-    # Qualquer outro caso não coberto — nega
     raise HTTPException(
         status_code=HTTPStatus.FORBIDDEN,
         detail='Insufficient permissions',

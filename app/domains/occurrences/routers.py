@@ -24,7 +24,7 @@ from app.domains.occurrences.schemas import (
     OccurrencePublic,
     OccurrenceUpdate,
 )
-from app.domains.users.models import User
+from app.domains.users.models import User, active_users
 from app.shared.db.database import get_session
 from app.shared.notifications.dispatcher import notify_occurrence_created
 from app.shared.rbac.dependencies import PermissionChecker
@@ -92,7 +92,9 @@ async def create_occurrence(
     O campo created_by_id é preenchido automaticamente com
     o usuário logado — não é aceito no corpo da requisição.
     """
-    student = await session.get(User, data.student_id)
+    student = await session.scalar(
+        active_users().where(User.id == data.student_id)
+    )
     if not student:
         raise HTTPException(
             status_code=HTTPStatus.NOT_FOUND, detail='Student not found'

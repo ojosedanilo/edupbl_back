@@ -10,7 +10,9 @@ class DelayCreate(BaseModel):
     # Campos obrigatórios ao registrar o atraso
     student_id: int
     arrival_time: time  # Obrigatório — hora de chegada do aluno
-    delay_date: date  # Obrigatório — limitado a 3 dias anteriores até hoje
+    delay_date: Optional[date] = (
+        None  # Opcional — padrão: hoje; limitado a 3 dias anteriores
+    )
     reason: Optional[str] = None
 
 

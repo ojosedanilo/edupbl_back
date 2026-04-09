@@ -1,4 +1,5 @@
 import csv
+import re
 import unicodedata
 
 from sqlalchemy import select
@@ -13,7 +14,12 @@ from app.core.settings import (
 from app.core.settings import (
     USUARIOS_DIR as _SETTINGS_USUARIOS_DIR,
 )
-from app.domains.users.models import Classroom, User, UserRole
+from app.domains.users.models import (
+    Classroom,
+    User,
+    UserRole,
+    guardian_student,
+)
 from app.shared.security import get_password_hash
 
 # ---------------------------------------------------------------------------
@@ -92,6 +98,94 @@ def _base_username(nome: str, sobrenome: str) -> str:
     primeiro = _normalizar(nome.split(maxsplit=1)[0])
     ultimo = _normalizar(sobrenome.rsplit(maxsplit=1)[-1])
     return f'{primeiro}.{ultimo}'
+
+
+# ---------------------------------------------------------------------------
+# Validação de campos do CSV
+# ---------------------------------------------------------------------------
+
+_EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+
+# Colunas obrigatórias por arquivo (as extras são opcionais)
+_COLUNAS_OBRIGATORIAS: dict[str, set[str]] = {
+    'admins.csv': {'nome', 'sobrenome', 'email', 'senha'},
+    'coordenadores.csv': {'nome', 'sobrenome', 'email', 'senha'},
+    'professores.csv': {'nome', 'sobrenome', 'email', 'senha'},
+    'professores_dt.csv': {'nome', 'sobrenome', 'email', 'senha'},
+    'alunos.csv': {'nome', 'sobrenome', 'email', 'senha'},
+    'porteiros.csv': {'nome', 'sobrenome', 'email', 'senha'},
+    'responsaveis.csv': {'nome', 'sobrenome', 'email', 'senha'},
+}
+
+
+def _validar_cabecalho(filename: str, fieldnames: list[str]) -> list[str]:
+    """
+    Verifica se todas as colunas obrigatórias estão presentes.
+    Retorna lista de erros (vazia = OK).
+    """
+    erros = []
+    obrigatorias = _COLUNAS_OBRIGATORIAS.get(filename, set())
+    presentes = {f.strip().lower() for f in (fieldnames or [])}
+    faltando = obrigatorias - presentes
+    if faltando:
+        erros.append(
+            f'Colunas obrigatórias ausentes: {", ".join(sorted(faltando))}'
+        )
+    return erros
+
+
+def _validar_linha(row: dict, linha: int, usa_sala: bool) -> list[str]:
+    """
+    Valida os campos de uma linha do CSV.
+    Retorna lista de erros (vazia = OK).
+    """
+    erros = []
+
+    nome = row.get('nome', '').strip()
+    sobrenome = row.get('sobrenome', '').strip()
+    email = row.get('email', '').strip()
+    senha = row.get('senha', '').strip()
+
+    if not nome:
+        erros.append(f'Linha {linha}: campo "nome" está vazio')
+    if not sobrenome:
+        erros.append(f'Linha {linha}: campo "sobrenome" está vazio')
+    if not email:
+        erros.append(f'Linha {linha}: campo "email" está vazio')
+    elif not _EMAIL_RE.match(email):
+        erros.append(f'Linha {linha}: e-mail inválido → "{email}"')
+    if not senha:
+        erros.append(f'Linha {linha}: campo "senha" está vazio')
+    elif len(senha) < 6:
+        erros.append(f'Linha {linha}: senha muito curta (mínimo 6 caracteres)')
+
+    role_str = row.get('role', '').strip()
+    if role_str:
+        try:
+            UserRole(role_str)
+        except ValueError:
+            valores = [r.value for r in UserRole]
+            erros.append(
+                f'Linha {linha}: role inválida "{role_str}" '
+                f'(válidas: {", ".join(valores)})'
+            )
+
+    if usa_sala:
+        sala = row.get('sala', '').strip()
+        if sala:
+            try:
+                num = int(sala)
+                if num not in range(1, 13):
+                    erros.append(
+                        f'Linha {linha}: sala "{sala}" fora do intervalo '
+                        f'válido (1–12)'
+                    )
+            except ValueError:
+                erros.append(
+                    f'Linha {linha}: sala "{sala}" não é um número inteiro'
+                )
+
+    return erros
 
 
 async def _gerar_username_unico(
@@ -339,16 +433,40 @@ async def seed_real_users(session: AsyncSession):  # noqa: PLR0914
 
         print(f'\n📄 Processando: {filename}')
 
-        novos_sem_avatar: list[User] = []
-        novos_com_avatar: list[
-            tuple[User, str]
-        ] = []  # (user, avatar_filename)
+        with open(filepath, encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            fieldnames = reader.fieldnames or []
+            rows = list(reader)
+
+        # --- Validação de cabeçalho ---
+        erros_cabecalho = _validar_cabecalho(filename, list(fieldnames))
+        if erros_cabecalho:
+            for err in erros_cabecalho:
+                print(f'  ❌ {err}')
+            print(f'  ⛔ {filename} ignorado por erro de formato.')
+            continue
+
+        # --- Validação prévia de todas as linhas ---
+        erros_validacao: list[str] = []
+        for linha, row in enumerate(rows, start=2):
+            erros_validacao.extend(_validar_linha(row, linha, usa_sala))
+
+        if erros_validacao:
+            print(f'  ⚠️  {len(erros_validacao)} erro(s) de validação:')
+            for err in erros_validacao[
+                :10
+            ]:  # exibe no máximo 10 para não poluir
+                print(f'     • {err}')
+            if len(erros_validacao) > 10:
+                print(f'     … e mais {len(erros_validacao) - 10} erro(s).')
+            print('  ⛔ Corrija o CSV e rode o seed novamente.')
+            continue
+
+        novos_sem_avatar: list[tuple] = []
+        novos_com_avatar: list[tuple] = []
         erros = 0
 
-        with open(filepath, encoding='utf-8') as f:
-            reader = list(csv.DictReader(f))
-
-        for linha, row in enumerate(reader, start=2):
+        for linha, row in enumerate(rows, start=2):
             try:
                 nome = row['nome'].strip()
                 sobrenome = row['sobrenome'].strip()
@@ -391,15 +509,8 @@ async def seed_real_users(session: AsyncSession):  # noqa: PLR0914
                     is_active=True,
                     must_change_password=True,
                 )
-                # classroom_id precisa ser setado após o objeto ser persistido:
-                # com mapped_as_dataclass o __init__ inicializa classroom=None
-                # por último, o que sobrescreve classroom_id passado ao construtor.
-                # Salva o valor para aplicar via setattr após o flush.
                 _classroom_id = classroom_id
 
-                # Coluna 'avatar' opcional — nome do arquivo relativo a
-                # data/fotos/ (ex: 'joao.jpg' ou 'turma1/pedro.png').
-                # Deixe vazio (ou omita a coluna) para não importar avatar.
                 avatar_filename = row.get('avatar', '').strip()
                 if avatar_filename:
                     novos_com_avatar.append((
@@ -417,10 +528,7 @@ async def seed_real_users(session: AsyncSession):  # noqa: PLR0914
                 print(f'  ⚠️  Linha {linha}: {exc}')
                 erros += 1
 
-        # Batch insert dos usuários sem avatar.
-        # classroom_id é aplicado via setattr após flush porque mapped_as_dataclass
-        # inicializa classroom=None por último no __init__, sobrescrevendo o valor
-        # passado ao construtor (ver comentário em conftest._make_user).
+        # Batch insert sem avatar
         if novos_sem_avatar:
             for user, cid in novos_sem_avatar:
                 session.add(user)
@@ -429,8 +537,7 @@ async def seed_real_users(session: AsyncSession):  # noqa: PLR0914
                     user.classroom_id = cid
             await session.commit()
 
-        # Usuários com avatar: flush individual para obter o id antes de
-        # processar o arquivo de imagem, depois commit em lote.
+        # Insert com avatar (flush individual para obter id)
         if novos_com_avatar:
             for user, cid, avatar_filename in novos_com_avatar:
                 session.add(user)
@@ -448,3 +555,147 @@ async def seed_real_users(session: AsyncSession):  # noqa: PLR0914
             print(f'  ⚠️  {erros} erro(s)')
 
     print(f'\n✅ {total_criados} usuários importados!')
+
+    # Processa associações responsável → aluno após todos os usuários criados
+    await seed_guardian_associations(session)
+
+
+# ---------------------------------------------------------------------------
+# Seed de associações responsável ↔ aluno via CSV
+# ---------------------------------------------------------------------------
+
+
+async def seed_guardian_associations(session: AsyncSession) -> None:
+    """
+    Lê responsaveis.csv e cria as associações guardian_student para cada
+    aluno listado na coluna `emails_alunos`.
+
+    Formato da coluna (opcional — responsáveis sem filhos no sistema são
+    criados normalmente, só sem vínculo):
+
+        emails_alunos
+        pedro.lima@escola.com
+        pedro.lima@escola.com;lucia.ferreira@escola.com
+
+    Separador aceito: ponto-e-vírgula (;) ou vírgula (,).
+    E-mails inexistentes ou de não-alunos geram aviso e são ignorados.
+    Associações já existentes são puladas (idempotente).
+    """
+    filepath = USUARIOS_DIR / 'responsaveis.csv'
+    if not filepath.exists():
+        return
+
+    with open(filepath, encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        fieldnames = list(reader.fieldnames or [])
+        rows = list(reader)
+
+    # Coluna ausente → nada a fazer (CSV antigo sem a feature)
+    if 'emails_alunos' not in [c.strip().lower() for c in fieldnames]:
+        return
+
+    print('\n🔗 Processando associações responsável → aluno...')
+
+    # Carrega todos os usuários ativos com role STUDENT indexados por e-mail
+    result = await session.execute(
+        select(User.id, User.email, User.role).where(User.is_active == True)  # noqa: E712
+    )
+    users_by_email: dict[str, tuple[int, UserRole]] = {
+        row.email: (row.id, row.role) for row in result
+    }
+
+    # Carrega pares já existentes para evitar duplicatas
+    existing_pairs = set(
+        (
+            await session.execute(
+                select(
+                    guardian_student.c.guardian_id,
+                    guardian_student.c.student_id,
+                )
+            )
+        ).fetchall()
+    )
+
+    vinculos_criados = 0
+    erros = 0
+
+    for linha, row in enumerate(rows, start=2):
+        guardian_email = row.get('email', '').strip().lower()
+        emails_alunos_raw = row.get('emails_alunos', '').strip()
+
+        if not guardian_email or not emails_alunos_raw:
+            continue
+
+        # Localiza o responsável no banco
+        guardian_info = users_by_email.get(guardian_email)
+        if guardian_info is None:
+            # Pode ser que o responsável não tenha sido criado nesta rodada
+            # (ex: já existia antes, com e-mail diferente no banco)
+            guardian_db = await session.scalar(
+                select(User).where(User.email == guardian_email)
+            )
+            if not guardian_db:
+                print(
+                    f'  ⚠️  Linha {linha}: responsável "{guardian_email}" '
+                    f'não encontrado — pulando vínculos.'
+                )
+                erros += 1
+                continue
+            guardian_id = guardian_db.id
+        else:
+            guardian_id = guardian_info[0]
+
+        # Separa e-mails dos alunos (aceita ; ou ,)
+        separador = ';' if ';' in emails_alunos_raw else ','
+        emails_alunos = [
+            e.strip().lower()
+            for e in emails_alunos_raw.split(separador)
+            if e.strip()
+        ]
+
+        for aluno_email in emails_alunos:
+            if not _EMAIL_RE.match(aluno_email):
+                print(
+                    f'  ⚠️  Linha {linha}: e-mail de aluno inválido '
+                    f'"{aluno_email}" — ignorado.'
+                )
+                erros += 1
+                continue
+
+            aluno_info = users_by_email.get(aluno_email)
+            if aluno_info is None:
+                print(
+                    f'  ⚠️  Linha {linha}: aluno "{aluno_email}" não '
+                    f'encontrado no banco — ignorado.'
+                )
+                erros += 1
+                continue
+
+            aluno_id, aluno_role = aluno_info
+            if aluno_role != UserRole.STUDENT:
+                print(
+                    f'  ⚠️  Linha {linha}: "{aluno_email}" não é um aluno '
+                    f'(role={aluno_role.value}) — ignorado.'
+                )
+                erros += 1
+                continue
+
+            par = (guardian_id, aluno_id)
+            if par in existing_pairs:
+                continue  # já associado — idempotente
+
+            await session.execute(
+                guardian_student.insert().values(
+                    guardian_id=guardian_id,
+                    student_id=aluno_id,
+                )
+            )
+            existing_pairs.add(par)
+            vinculos_criados += 1
+
+    if vinculos_criados or erros:
+        await session.commit()
+
+    print(f'  ✅ {vinculos_criados} vínculo(s) criado(s)')
+    if erros:
+        print(f'  ⚠️  {erros} aviso(s)')

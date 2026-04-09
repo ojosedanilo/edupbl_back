@@ -43,8 +43,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.settings import AVATAR_DIR
 from app.domains.schedules.helpers import is_time_at_class_period
 from app.domains.schedules.periods import PERIODS
-from app.domains.users.models import Classroom, User
+from app.domains.users.models import Classroom, User, active_users
 from app.domains.users.schemas import (
+    AdminUserUpdate,
     PasswordChange,
     StudentProfileUpdate,
     # StudentSummary,
@@ -238,7 +239,7 @@ async def read_users(
     session: Session,
     filter_users: Annotated[FilterPage, Query()],
 ):
-    query = select(User)
+    query = active_users()
 
     if filter_users.role:
         query = query.where(User.role == filter_users.role)
@@ -270,7 +271,7 @@ async def list_all_students(session: Session):
     Expõe apenas campos de identificação (StudentSummary) — sem dados sensíveis.
     """
     result = await session.scalars(
-        select(User)
+        active_users()
         .where(User.role == UserRole.STUDENT)
         .order_by(User.last_name)
     )
@@ -338,7 +339,7 @@ async def list_students_of_classroom(
         )
 
     result = await session.scalars(
-        select(User)
+        active_users()
         .where(User.role == UserRole.STUDENT)
         .where(User.classroom_id == classroom_id)
         .order_by(User.last_name)
@@ -383,7 +384,7 @@ async def list_current_class_students(
         )
 
     result = await session.scalars(
-        select(User)
+        active_users()
         .where(User.role == UserRole.STUDENT)
         .where(User.classroom_id == current_user.classroom_id)
         .order_by(User.last_name)
@@ -420,7 +421,7 @@ async def search_users(
     ] = 10,
 ):
     """Busca usuários por nome ou username. Usado para autocomplete."""
-    query = select(User).where(
+    query = active_users().where(
         or_(
             User.first_name.ilike(f'%{q}%'),
             User.last_name.ilike(f'%{q}%'),
@@ -469,7 +470,7 @@ async def get_users_bulk(
     if not data.ids:
         return {'users': []}
 
-    result = await session.scalars(select(User).where(User.id.in_(data.ids)))
+    result = await session.scalars(active_users().where(User.id.in_(data.ids)))
     users_by_id = {u.id: u for u in result.all()}
 
     # Preserva a ordem dos IDs fornecidos, ignorando inexistentes

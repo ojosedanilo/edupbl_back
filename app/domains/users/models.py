@@ -22,6 +22,7 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy import Enum as SQLEnum
+from sqlalchemy import select as _sa_select
 from sqlalchemy.orm import (
     Mapped,
     mapped_as_dataclass,
@@ -205,3 +206,26 @@ class User:
         default=None,
         foreign_keys='User.classroom_id',
     )
+
+
+# ---------------------------------------------------------------------------
+# Query helpers
+# ---------------------------------------------------------------------------
+
+
+def active_users():
+    """
+    Ponto de entrada padrão para queries de User.
+
+    Retorna um select(User) já filtrado por is_active=True, evitando
+    que usuários desativados apareçam em listagens, buscas e validações.
+
+    Uso:
+        result = await session.scalars(
+            active_users().where(User.role == UserRole.STUDENT)
+        )
+
+    Use `select(User)` diretamente apenas quando for legítimo incluir
+    inativos (ex: seed.py, endpoint de reativação, auditoria).
+    """
+    return _sa_select(User).where(User.is_active == True)  # noqa: E712

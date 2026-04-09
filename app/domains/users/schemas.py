@@ -75,6 +75,33 @@ class UserUpdate(BaseModel):
         return _validate_username(v)
 
 
+class AdminUserUpdate(BaseModel):
+    """
+    Schema de atualização privilegiada — usado por Coord/Admin via
+    PATCH /users/{id}/admin-update.
+
+    Permite editar qualquer campo de qualquer usuário, incluindo role,
+    is_tutor e classroom_id. A alteração de role requer USER_CHANGE_ROLE
+    (Admin); Coordenadores têm USER_EDIT mas não USER_CHANGE_ROLE.
+    """
+
+    first_name: str | None = None
+    last_name: str | None = None
+    phone: str | None = None
+    email: EmailStr | None = None
+    username: str | None = None
+    role: UserRole | None = None
+    is_tutor: bool | None = None
+    is_active: bool | None = None
+    classroom_id: int | None = None
+    must_change_password: bool | None = None
+
+    @field_validator('username')
+    @classmethod
+    def username_format(cls, v: str | None) -> str | None:
+        return _validate_username(v)
+
+
 class UserPublic(BaseModel):
     """Resposta pública da API — sem campos sensíveis (ex: senha)."""
 

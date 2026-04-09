@@ -1,3 +1,4 @@
-nome,sobrenome,email,senha,role,avatar
-João,Responsavel,joao.resp@escola.com,Resp2024!,guardian,
-Maria,Mae,maria.mae@escola.com,Resp2024!,guardian,
+nome,sobrenome,email,senha,role,avatar,emails_alunos
+João,Responsavel,joao.resp@escola.com,Resp2024!,guardian,,pedro.lima@escola.com
+Maria,Mae,maria.mae@escola.com,Resp2024!,guardian,,lucia.ferreira@escola.com;rafael.oliveira@escola.com
+Sandra,Tutora,sandra.tutora@escola.com,Resp2024!,guardian,,
