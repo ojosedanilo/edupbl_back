@@ -7,9 +7,10 @@ from app.domains.delays.enums import DelayStatusEnum
 
 
 class DelayCreate(BaseModel):
-    # Campos informados pelo porteiro ao registrar o atraso
+    # Campos obrigatórios ao registrar o atraso
     student_id: int
-    arrival_time: time
+    arrival_time: time  # Obrigatório — hora de chegada do aluno
+    delay_date: date  # Obrigatório — limitado a 3 dias anteriores até hoje
     reason: Optional[str] = None
 
 
@@ -28,7 +29,7 @@ class DelayPublic(BaseModel):
 
     id: int
     student_id: int
-    registered_by_id: Optional[int]
+    recorded_by_id: Optional[int]  # Quem registrou (porteiro, coordenador...)
     approved_by_id: Optional[int]
     delay_date: date
     arrival_time: time

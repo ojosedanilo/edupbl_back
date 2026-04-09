@@ -2,7 +2,7 @@
 Rotas de atrasos de alunos.
 
 Regras de autorização por endpoint:
-  POST   /delays              → requer DELAYS_CREATE (porteiro)
+  POST   /delays              → requer DELAYS_CREATE (porteiro, coordenador)
   GET    /delays              → requer DELAYS_VIEW_ALL (porteiro/coordenador/admin)
   GET    /delays/pending      → requer DELAYS_REVIEW (coordenador/admin)
   GET    /delays/me           → requer DELAYS_VIEW_OWN (aluno)
@@ -22,11 +22,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domains.delays.enums import DelayStatusEnum
 from app.domains.delays.models import Delay
-from app.domains.delays.notifications import (
-    notify_delay_approved,
-    notify_delay_registered,
-    notify_delay_rejected,
-)
 from app.domains.delays.periods import UNDO_WINDOW_MINUTES, get_expected_time
 from app.domains.delays.schemas import (
     DelayCreate,
@@ -36,6 +31,11 @@ from app.domains.delays.schemas import (
 )
 from app.domains.users.models import User, guardian_student
 from app.shared.db.database import get_session
+from app.shared.notifications.dispatcher import (
+    notify_delay_approved,
+    notify_delay_registered,
+    notify_delay_rejected,
+)
 from app.shared.rbac.dependencies import (
     AnyPermissionChecker,
     PermissionChecker,
@@ -144,11 +144,20 @@ async def create_delay(
             detail='User is not a student',
         )
 
+    # Data do atraso: usa a fornecida; limita a 3 dias no passado
+    target_date = data.delay_date
+    min_date = date.today() - timedelta(days=3)
+    if target_date < min_date or target_date > date.today():
+        raise HTTPException(
+            status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
+            detail='delay_date must be between 3 days ago and today',
+        )
+
     # Impede atraso duplicado no mesmo dia para o mesmo aluno
     existing = await session.scalar(
         select(Delay).where(
             Delay.student_id == data.student_id,
-            Delay.delay_date == date.today(),
+            Delay.delay_date == target_date,
         )
     )
     if existing:
@@ -161,15 +170,16 @@ async def create_delay(
     expected = get_expected_time(data.arrival_time)
 
     # Calcula o atraso em minutos
-    arrival_dt = datetime.combine(date.today(), data.arrival_time)
-    expected_dt = datetime.combine(date.today(), expected)
+    arrival_dt = datetime.combine(target_date, data.arrival_time)
+    expected_dt = datetime.combine(target_date, expected)
     delay_minutes = max(
         0, int((arrival_dt - expected_dt).total_seconds() // 60)
     )
 
     delay = Delay(
         student_id=data.student_id,
-        registered_by_id=current_user.id,
+        recorded_by_id=current_user.id,
+        delay_date=target_date,
         arrival_time=data.arrival_time,
         delay_minutes=delay_minutes,
         reason=data.reason,

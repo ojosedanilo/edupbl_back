@@ -21,13 +21,13 @@ class Delay:
         ForeignKey('users.id', ondelete='CASCADE'),
         nullable=False,
     )
-    # Hora que o aluno chegou — informada pelo porteiro
+    # Hora que o aluno chegou — obrigatória, informada por quem registra
     arrival_time: Mapped[time] = mapped_column(Time, nullable=False)
     # Calculado automaticamente ao registrar (em minutos)
     delay_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    # Atraso fica se porteiro for deletado
-    registered_by_id: Mapped[Optional[int]] = mapped_column(
+    # Quem registrou o atraso (porteiro, coordenador etc.) — fica se deletado
+    recorded_by_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey('users.id', ondelete='SET NULL'),
         nullable=True,
         default=None,
@@ -39,7 +39,7 @@ class Delay:
         default=None,
     )
 
-    # Motivo informado pelo aluno/porteiro (opcional)
+    # Motivo informado pelo aluno/registrador (opcional)
     reason: Mapped[Optional[str]] = mapped_column(
         Text, nullable=True, default=None
     )
@@ -48,14 +48,13 @@ class Delay:
         Text, nullable=True, default=None
     )
 
-    # Data do atraso — preenchida pelo banco com a data atual
+    # Data do atraso — obrigatória (padrão: hoje), limitada aos últimos 3 dias
     delay_date: Mapped[date] = mapped_column(
         Date,
-        init=False,
         default=date.today,
         server_default=func.current_date(),
     )
-    # Hora esperada para a chegada (07:30 fixo no MVP)
+    # Hora esperada para a chegada (calculada com base nos períodos)
     expected_time: Mapped[time] = mapped_column(
         Time, init=False, default=time(7, 30)
     )
