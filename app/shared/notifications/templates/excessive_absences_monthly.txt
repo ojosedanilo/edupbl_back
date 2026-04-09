@@ -1,0 +1,9 @@
+Alerta de faltas excessivas - {aluno_nome}
+
+{saudacao},
+
+O(A) aluno(a) {aluno_nome} da turma {turma} atingiu **{numero_faltas} faltas** no mês de {mes}/{ano}, ultrapassando o limite de {limite_faltas} faltas permitidas neste período.
+
+Última falta registrada em: {ultima_falta_data}
+
+Atenção: recomenda-se verificar a frequência do aluno e tomar as medidas cabíveis.

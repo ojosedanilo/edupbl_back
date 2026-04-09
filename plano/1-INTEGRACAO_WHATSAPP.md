@@ -52,6 +52,7 @@ Documente todos no `.env.example` com valores de exemplo e comentários explican
 Cada template é um arquivo `.txt` com marcadores `{campo}`. Defina um formato fixo para cada template: primeira linha é o assunto (para e-mail), linha em branco, depois o corpo. As funções de notificação lerão esses arquivos e farão `.format(**dados)` antes de enviar.
 
 Campos sugeridos por template:
+
 - `delay_registered.txt`: `{aluno_nome}`, `{turma}`, `{horario_chegada}`, `{horario_esperado}`, `{minutos_atraso}`, `{motivo}`, `{registrado_por}`
 - `delay_approved.txt`: `{aluno_nome}`, `{turma}`, `{data}`, `{aprovado_por}`
 - `delay_rejected.txt`: `{aluno_nome}`, `{turma}`, `{data}`, `{motivo_rejeicao}`
@@ -150,16 +151,19 @@ Os testes de delays já existem em `test_delays.py`. Adicione mocks para as fun�
 ## Checklist de implementação
 
 **Infraestrutura:**
-- [ ] Criar `app/shared/notifications/` com `__init__.py`
-- [ ] Adicionar variáveis SMTP e WhatsApp em `settings.py` e `.env.example`
+
+- [X] Criar `app/shared/notifications/` com `__init__.py`
+- [X] Adicionar variáveis SMTP e WhatsApp em `settings.py` e `.env.example`
 - [ ] Criar os 4 templates de texto em `notifications/templates/`
 
 **E-mail:**
+
 - [ ] Instalar `aiosmtplib` com `uv add aiosmtplib`
 - [ ] Criar `email.py` com camada baixa e camada alta
 - [ ] Testar envio real com conta Gmail de teste + App Password
 
 **WhatsApp (Neonize):**
+
 - [ ] Instalar `neonize` com `uv add neonize`
 - [ ] Adicionar inicialização do client no `lifespan` do `main.py`
 - [ ] Criar `whatsapp.py` com camada baixa e camada alta
@@ -168,6 +172,7 @@ Os testes de delays já existem em `test_delays.py`. Adicione mocks para as fun�
 - [ ] Testar envio com número autorizado
 
 **Integração:**
+
 - [ ] Criar `dispatcher.py` com lógica de fallback
 - [ ] Atualizar assinaturas em `delays/notifications.py` para receber `session`
 - [ ] Ajustar chamadas nos routers de delays

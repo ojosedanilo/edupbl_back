@@ -42,6 +42,19 @@ class Settings(BaseSettings):
     API_URL: str = 'http://localhost:8000/'
     FRONTEND_URL: str = 'http://localhost:5173'
 
+    # ── E-mail ────────────────────────────────────────────────────── #
+    SMTP_HOST: str
+    SMTP_PORT: int = 587
+    SMTP_USER: str
+    SMTP_PASSWORD: str
+    SMTP_FROM: str
+    SMTP_ENABLED: bool = False
+
+    # ── WhatsApp ──────────────────────────────────────────────────── #
+    WHATSAPP_ENABLED: bool = False
+    WHATSAPP_DB_PATH: str
+    WHATSAPP_DEVICE_NAME: str
+
     # ── Cookies ────────────────────────────────────────────────────── #
     # Computed fields derivados de ENVIRONMENT.
     # TODO: remover os valores fixos e restaurar a lógica comentada

@@ -1,0 +1,11 @@
+Registro de atraso - {aluno_nome}
+
+{saudacao},
+
+O atraso do(a) aluno(a) {aluno_nome} da turma {turma} foi registrado.
+- Horário de chegada: {horario_chegada}
+- Horário esperado: {horario_esperado}
+- Minutos de atraso: {minutos_atraso}
+- Motivo: {motivo}
+
+Registrado por: {registrado_por}

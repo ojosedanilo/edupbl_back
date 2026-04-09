@@ -1,0 +1,7 @@
+Atraso rejeitado - {aluno_nome}
+
+{saudacao},
+
+O atraso do(a) aluno(a) {aluno_nome} da turma {turma} registrado em {data} foi **rejeitado**.
+
+Motivo da rejeição: {motivo_rejeicao}
