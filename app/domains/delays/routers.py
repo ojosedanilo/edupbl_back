@@ -1,13 +1,19 @@
 """
 Rotas de atrasos de alunos.
 
+Restrição de horário para porteiro:
+  Porteiro só pode REGISTRAR e APROVAR atrasos durante os intervalos
+  (SNACK_BREAK e LUNCH_BREAK) + tolerância de PORTER_DELAY_WINDOW_MINUTES.
+  Coordenador pode registrar e aprovar a qualquer momento.
+  A restrição de janela de datas (3 dias) se aplica a ambos.
+
 Regras de autorização por endpoint:
   POST   /delays              → requer DELAYS_CREATE (porteiro, coordenador)
   GET    /delays              → requer DELAYS_VIEW_ALL (porteiro/coordenador/admin)
   GET    /delays/pending      → requer DELAYS_REVIEW (coordenador/admin)
   GET    /delays/me           → requer DELAYS_VIEW_OWN (aluno)
   GET    /delays/{id}         → requer pelo menos uma permissão de visualização
-  PATCH  /delays/{id}/approve → requer DELAYS_REVIEW (coordenador/admin)
+  PATCH  /delays/{id}/approve → requer DELAYS_REVIEW (coordenador/admin) OU porteiro em intervalo
   PATCH  /delays/{id}/reject  → requer DELAYS_REVIEW (coordenador/admin)
   PATCH  /delays/{id}/undo    → requer DELAYS_REVIEW — desfaz dentro da janela
 """
@@ -29,6 +35,7 @@ from app.domains.delays.schemas import (
     DelayPublic,
     DelayReject,
 )
+from app.domains.delays.window import is_within_porter_window
 from app.domains.users.models import User, active_users, guardian_student
 from app.shared.db.database import get_session
 from app.shared.notifications.dispatcher import (
@@ -51,7 +58,6 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
 async def _get_delay_or_404(delay_id: int, session: AsyncSession) -> Delay:
-    """Busca o atraso pelo id ou lança 404 se não existir."""
     delay = await session.scalar(select(Delay).where(Delay.id == delay_id))
     if not delay:
         raise HTTPException(
@@ -60,8 +66,20 @@ async def _get_delay_or_404(delay_id: int, session: AsyncSession) -> Delay:
     return delay
 
 
+def _assert_porter_window(current_user: User) -> None:
+    """
+    Se o usuário for porteiro, verifica se está dentro da janela de intervalo.
+    Coordenadores e admins passam direto.
+    """
+    if current_user.role == UserRole.PORTER and not is_within_porter_window():
+        raise HTTPException(
+            status_code=HTTPStatus.FORBIDDEN,
+            detail='Porteiros só podem registrar/aprovar atrasos durante os intervalos.',
+        )
+
+
 # --------------------------------------------------------------------------- #
-# GET /delays/pending — Listar pendentes (antes de /{id})                     #
+# GET /delays/pending                                                          #
 # --------------------------------------------------------------------------- #
 
 
@@ -73,10 +91,6 @@ async def _get_delay_or_404(delay_id: int, session: AsyncSession) -> Delay:
     ],
 )
 async def list_pending_delays(session: Session):
-    """
-    Retorna todos os atrasos com status PENDING, ordenados por data de criação.
-    Atalho para a tela de aprovação da coordenação.
-    """
     result = await session.scalars(
         select(Delay)
         .where(Delay.status == DelayStatusEnum.PENDING)
@@ -86,7 +100,7 @@ async def list_pending_delays(session: Session):
 
 
 # --------------------------------------------------------------------------- #
-# GET /delays/me — Meus atrasos (antes de /{id})                             #
+# GET /delays/me                                                               #
 # --------------------------------------------------------------------------- #
 
 
@@ -98,7 +112,6 @@ async def list_pending_delays(session: Session):
     ],
 )
 async def list_my_delays(session: Session, current_user: CurrentUser):
-    """Retorna os atrasos do aluno logado."""
     result = await session.scalars(
         select(Delay).where(Delay.student_id == current_user.id)
     )
@@ -126,11 +139,12 @@ async def create_delay(
     """
     Registra um novo atraso para um aluno.
 
-    O porteiro informa student_id, arrival_time e reason (opcional).
-    expected_time é calculado automaticamente com base no período vigente
-    no momento da chegada (derivado da configuração de schedules).
+    Porteiro: só pode registrar durante os intervalos.
+    Coordenador: pode registrar a qualquer momento.
     """
-    # Verifica se o aluno existe e está ativo
+    # Verificação de janela horária (porteiro)
+    _assert_porter_window(current_user)
+
     student = await session.scalar(
         active_users().where(User.id == data.student_id)
     )
@@ -139,14 +153,12 @@ async def create_delay(
             status_code=HTTPStatus.NOT_FOUND, detail='Student not found'
         )
 
-    # Apenas usuários com role STUDENT podem ter atrasos registrados
     if student.role != UserRole.STUDENT:
         raise HTTPException(
             status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
             detail='User is not a student',
         )
 
-    # Data do atraso: usa a fornecida ou hoje como padrão; limita a 3 dias no passado
     target_date = (
         data.delay_date if data.delay_date is not None else date.today()
     )
@@ -157,7 +169,6 @@ async def create_delay(
             detail='delay_date must be between 3 days ago and today',
         )
 
-    # Impede atraso duplicado no mesmo dia para o mesmo aluno
     existing = await session.scalar(
         select(Delay).where(
             Delay.student_id == data.student_id,
@@ -170,10 +181,8 @@ async def create_delay(
             detail='Delay already registered for this student today',
         )
 
-    # Determina o horário esperado com base no período vigente
     expected = get_expected_time(data.arrival_time)
 
-    # Calcula o atraso em minutos
     arrival_dt = datetime.combine(target_date, data.arrival_time)
     expected_dt = datetime.combine(target_date, expected)
     delay_minutes = max(
@@ -188,7 +197,6 @@ async def create_delay(
         delay_minutes=delay_minutes,
         reason=data.reason,
     )
-    # expected_time é init=False no model; precisa ser atribuído manualmente
     delay.expected_time = expected
 
     session.add(delay)
@@ -216,14 +224,6 @@ async def list_all_delays(
     status: Optional[DelayStatusEnum] = Query(default=None),
     date_filter: Optional[date] = Query(default=None, alias='date'),
 ):
-    """
-    Retorna todos os atrasos do sistema. Acesso restrito a porteiros,
-    coordenadores e admins.
-
-    Filtros opcionais:
-      ?status=PENDING|APPROVED|REJECTED
-      ?date=YYYY-MM-DD
-    """
     stmt = select(Delay)
 
     if status:
@@ -236,7 +236,7 @@ async def list_all_delays(
 
 
 # --------------------------------------------------------------------------- #
-# GET /delays/{id} — Detalhe de um atraso                                    #
+# GET /delays/{id}                                                            #
 # --------------------------------------------------------------------------- #
 
 
@@ -259,35 +259,16 @@ async def get_delay(
     current_user: CurrentUser,
     delay_id: int = Path(alias='delay_id'),
 ):
-    """
-    Retorna o detalhe de um atraso específico.
-
-    Após a verificação de permissão, aplica regra de ownership conforme o role:
-      - Coordenador / Admin / Porteiro : acesso irrestrito (têm DELAYS_VIEW_ALL)
-      - Aluno                          : só o próprio atraso
-      - Responsável                    : só atrasos dos seus filhos
-      - Professor DT                   : só atrasos da própria turma
-    """
     delay = await _get_delay_or_404(delay_id, session)
 
-    # Coordenador, Admin e Porteiro têm DELAYS_VIEW_ALL — sem restrição adicional
-    if current_user.role in {
-        UserRole.COORDINATOR,
-        UserRole.ADMIN,
-        UserRole.PORTER,
-    }:
+    if current_user.role in {UserRole.COORDINATOR, UserRole.ADMIN, UserRole.PORTER}:
         return delay
 
-    # Aluno só pode ver o próprio atraso
     if current_user.role == UserRole.STUDENT:
         if delay.student_id != current_user.id:
-            raise HTTPException(
-                status_code=HTTPStatus.FORBIDDEN,
-                detail='Insufficient permissions',
-            )
+            raise HTTPException(status_code=HTTPStatus.FORBIDDEN, detail='Insufficient permissions')
         return delay
 
-    # Responsável só vê atraso de filho registrado em sua tutela
     if current_user.role == UserRole.GUARDIAN:
         link = await session.execute(
             select(guardian_student).where(
@@ -296,38 +277,26 @@ async def get_delay(
             )
         )
         if not link.first():
-            raise HTTPException(
-                status_code=HTTPStatus.FORBIDDEN,
-                detail='Insufficient permissions',
-            )
+            raise HTTPException(status_code=HTTPStatus.FORBIDDEN, detail='Insufficient permissions')
         return delay
 
-    # Professor DT só vê atrasos da própria turma
     if current_user.role == UserRole.TEACHER and current_user.is_tutor:
         student = await session.get(User, delay.student_id)
         if not student or student.classroom_id != current_user.classroom_id:
-            raise HTTPException(
-                status_code=HTTPStatus.FORBIDDEN,
-                detail='Insufficient permissions',
-            )
+            raise HTTPException(status_code=HTTPStatus.FORBIDDEN, detail='Insufficient permissions')
         return delay
-    raise HTTPException(
-        status_code=HTTPStatus.FORBIDDEN,
-        detail='Insufficient permissions',
-    )
+
+    raise HTTPException(status_code=HTTPStatus.FORBIDDEN, detail='Insufficient permissions')
 
 
 # --------------------------------------------------------------------------- #
-# PATCH /delays/{id}/approve — Aprovar entrada                               #
+# PATCH /delays/{id}/approve                                                  #
 # --------------------------------------------------------------------------- #
 
 
 @router.patch(
     '/{delay_id}/approve',
     response_model=DelayPublic,
-    dependencies=[
-        Depends(PermissionChecker({SystemPermissions.DELAYS_REVIEW}))
-    ],
 )
 async def approve_delay(
     session: Session,
@@ -336,17 +305,24 @@ async def approve_delay(
 ):
     """
     Aprova a entrada de um aluno atrasado.
-    Só é possível aprovar atrasos com status PENDING — status é final.
-    Use /undo dentro de 5 minutos para reverter uma decisão equivocada.
+
+    Porteiro: só pode aprovar durante os intervalos (mesma janela do registro).
+    Coordenador/Admin: pode aprovar a qualquer momento.
     """
+    # Porteiro precisa de DELAYS_CREATE; coordenador de DELAYS_REVIEW
+    from app.shared.rbac.helpers import user_has_any_permission
+
+    if current_user.role == UserRole.PORTER:
+        if not user_has_any_permission(current_user, {SystemPermissions.DELAYS_CREATE}):
+            raise HTTPException(status_code=HTTPStatus.FORBIDDEN, detail='Insufficient permissions')
+        _assert_porter_window(current_user)
+    elif not user_has_any_permission(current_user, {SystemPermissions.DELAYS_REVIEW}):
+        raise HTTPException(status_code=HTTPStatus.FORBIDDEN, detail='Insufficient permissions')
+
     delay = await _get_delay_or_404(delay_id, session)
 
-    # Status é final após a primeira decisão
     if delay.status != DelayStatusEnum.PENDING:
-        raise HTTPException(
-            status_code=HTTPStatus.CONFLICT,
-            detail='Delay already decided',
-        )
+        raise HTTPException(status_code=HTTPStatus.CONFLICT, detail='Delay already decided')
 
     delay.status = DelayStatusEnum.APPROVED
     delay.approved_by_id = current_user.id
@@ -359,7 +335,7 @@ async def approve_delay(
 
 
 # --------------------------------------------------------------------------- #
-# PATCH /delays/{id}/reject — Rejeitar entrada                               #
+# PATCH /delays/{id}/reject                                                   #
 # --------------------------------------------------------------------------- #
 
 
@@ -376,19 +352,10 @@ async def reject_delay(
     current_user: CurrentUser,
     delay_id: int = Path(alias='delay_id'),
 ):
-    """
-    Rejeita a entrada de um aluno atrasado.
-    Só é possível rejeitar atrasos com status PENDING — status é final.
-    Use /undo dentro de 5 minutos para reverter uma decisão equivocada.
-    """
     delay = await _get_delay_or_404(delay_id, session)
 
-    # Status é final após a primeira decisão
     if delay.status != DelayStatusEnum.PENDING:
-        raise HTTPException(
-            status_code=HTTPStatus.CONFLICT,
-            detail='Delay already decided',
-        )
+        raise HTTPException(status_code=HTTPStatus.CONFLICT, detail='Delay already decided')
 
     delay.status = DelayStatusEnum.REJECTED
     delay.approved_by_id = current_user.id
@@ -402,7 +369,7 @@ async def reject_delay(
 
 
 # --------------------------------------------------------------------------- #
-# PATCH /delays/{id}/undo — Desfazer decisão                                 #
+# PATCH /delays/{id}/undo                                                     #
 # --------------------------------------------------------------------------- #
 
 
@@ -417,23 +384,11 @@ async def undo_delay_decision(
     session: Session,
     delay_id: int = Path(alias='delay_id'),
 ):
-    """
-    Desfaz uma decisão de aprovação ou rejeição, revertendo o atraso para PENDING.
-
-    Só é possível desfazer dentro da janela configurada (UNDO_WINDOW_MINUTES).
-    Após esse prazo, o status é considerado permanente.
-    Requer a mesma permissão DELAYS_REVIEW do approve/reject.
-    """
     delay = await _get_delay_or_404(delay_id, session)
 
-    # Só faz sentido desfazer algo que já foi decidido
     if delay.status == DelayStatusEnum.PENDING:
-        raise HTTPException(
-            status_code=HTTPStatus.CONFLICT,
-            detail='Delay has not been decided yet',
-        )
+        raise HTTPException(status_code=HTTPStatus.CONFLICT, detail='Delay has not been decided yet')
 
-    # Verifica a janela de tempo usando updated_at como proxy do momento da decisão
     window_limit = datetime.utcnow() - timedelta(minutes=UNDO_WINDOW_MINUTES)
     if delay.updated_at < window_limit:
         raise HTTPException(

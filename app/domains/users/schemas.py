@@ -13,6 +13,46 @@ Hierarquia:
 
 import re
 
+# --------------------------------------------------------------------------- #
+# Validação de senha                                                           #
+# --------------------------------------------------------------------------- #
+
+_COMMON_SEQUENCES = re.compile(
+    r'(012|123|234|345|456|567|678|789|890'
+    r'|abc|bcd|cde|def|efg|fgh|ghi|hij|ijk|jkl|klm|lmn|mno|nop|opq|pqr|qrs|rst|stu|tuv|uvw|vwx|wxy|xyz'
+    r'|qwerty|asdf|zxcv|senha|password|admin)',
+    re.IGNORECASE,
+)
+_REPEATED_CHARS = re.compile(r'(.)\1{3,}')  # 4+ repetições do mesmo char
+
+
+def validate_password_strength(v: str) -> str:
+    """
+    Valida os critérios de segurança da senha.
+    Lança ValueError descritivo se algum critério não for atendido.
+    """
+    errors: list[str] = []
+
+    if len(v) < 8:
+        errors.append('Mínimo de 8 caracteres (15+ é muito mais seguro).')
+    if not re.search(r'[A-Z]', v):
+        errors.append('Pelo menos uma letra maiúscula (A-Z).')
+    if not re.search(r'[a-z]', v):
+        errors.append('Pelo menos uma letra minúscula (a-z).')
+    if not re.search(r'\d', v):
+        errors.append('Pelo menos um número (0-9).')
+    if not re.search(r'[@#$%&!*]', v):
+        errors.append('Pelo menos um caractere especial: @ # $ % & ! *')
+    if _REPEATED_CHARS.search(v):
+        errors.append('Evite repetições de caracteres (ex: aaaa).')
+    if _COMMON_SEQUENCES.search(v):
+        errors.append('Evite sequências comuns (ex: 123456, qwerty, senha).')
+
+    if errors:
+        raise ValueError(' | '.join(errors))
+
+    return v
+
 from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
 
 from app.shared.rbac.permissions import SystemPermissions
@@ -53,6 +93,11 @@ class UserSchema(BaseModel):
     @classmethod
     def username_format(cls, v: str) -> str:
         return _validate_username(v)  # type: ignore[return-value]
+
+    @field_validator('password')
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        return validate_password_strength(v)
 
 
 class UserUpdate(BaseModel):
@@ -148,6 +193,11 @@ class PasswordChange(BaseModel):
 
     current_password: str
     new_password: str
+
+    @field_validator('new_password')
+    @classmethod
+    def new_password_strength(cls, v: str) -> str:
+        return validate_password_strength(v)
 
 
 class UserList(BaseModel):

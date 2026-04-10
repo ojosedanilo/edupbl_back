@@ -24,6 +24,7 @@ from app.domains.schedules import routers as schedules_routers
 from app.domains.users import routers as users_routers
 from app.shared.db.database import SessionLocal
 from app.shared.db.seed import seed_test_users
+from app.shared.notifications import routers as notifications_routers
 from app.shared.schemas import Message
 
 
@@ -48,7 +49,11 @@ app = FastAPI(title='EduPBL', lifespan=lifespan)
 # CORS: permite o frontend de dev enviar cookies (withCredentials: true)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=['http://localhost:5173', settings.FRONTEND_URL],
+    allow_origins=[
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+        settings.FRONTEND_URL,
+    ],
     allow_credentials=True,
     allow_methods=['*'],
     allow_headers=['*'],
@@ -59,6 +64,7 @@ app.include_router(users_routers.router)
 app.include_router(occurrences_routers.router)
 app.include_router(schedules_routers.router)
 app.include_router(delays_routers.router)
+app.include_router(notifications_routers.router)
 
 
 @app.get('/', status_code=HTTPStatus.OK, response_model=Message)

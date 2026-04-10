@@ -145,7 +145,7 @@ async def seed_schedules(session: AsyncSession) -> None:  # noqa: PLR0915
             reader = csv.DictReader(f)
             linhas = list(reader)
 
-        # 🔥 Cache de slots existentes (performance)
+        # Cache de slots existentes (performance)
         existing_rows = await session.execute(
             select(
                 ScheduleSlot.weekday,
@@ -154,9 +154,7 @@ async def seed_schedules(session: AsyncSession) -> None:  # noqa: PLR0915
             ).where(ScheduleSlot.classroom_id == classroom_id)
         )
 
-        existing_set = {
-            (w, p, t) for w, p, t in existing_rows.all()
-        }
+        existing_set = {(w, p, t) for w, p, t in existing_rows.all()}
 
         criados = pulados = erros = 0
 
@@ -168,13 +166,17 @@ async def seed_schedules(session: AsyncSession) -> None:  # noqa: PLR0915
                 try:
                     tipo = PeriodTypeEnum(tipo_raw)
                 except ValueError:
-                    print(f'    ⚠️ Linha {linha_num}: tipo inválido "{tipo_raw}"')
+                    print(
+                        f'    ⚠️ Linha {linha_num}: tipo inválido "{tipo_raw}"'
+                    )
                     erros += 1
                     continue
 
                 # --- Dia ---
                 try:
-                    weekday = WeekdayEnum(int(row.get('dia_semana', '').strip()))
+                    weekday = WeekdayEnum(
+                        int(row.get('dia_semana', '').strip())
+                    )
                 except Exception:
                     print(f'    ⚠️ Linha {linha_num}: dia_semana inválido')
                     erros += 1
@@ -185,7 +187,9 @@ async def seed_schedules(session: AsyncSession) -> None:  # noqa: PLR0915
                 period_number = int(periodo_raw) if periodo_raw else None
 
                 if tipo.requires_teacher and period_number is None:
-                    print(f'    ⚠️ Linha {linha_num}: class_period sem numero_periodo')
+                    print(
+                        f'    ⚠️ Linha {linha_num}: class_period sem numero_periodo'
+                    )
                     erros += 1
                     continue
 
@@ -196,11 +200,15 @@ async def seed_schedules(session: AsyncSession) -> None:  # noqa: PLR0915
                 if email:
                     teacher_id = teacher_map.get(email)
                     if not teacher_id:
-                        print(f'    ⚠️ Linha {linha_num}: professor "{email}" não encontrado')
+                        print(
+                            f'    ⚠️ Linha {linha_num}: professor "{email}" não encontrado'
+                        )
                         erros += 1
                         continue
                 elif tipo.requires_teacher:
-                    print(f'    ⚠️ Linha {linha_num}: class_period sem professor')
+                    print(
+                        f'    ⚠️ Linha {linha_num}: class_period sem professor'
+                    )
                     erros += 1
                     continue
 

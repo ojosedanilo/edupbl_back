@@ -1,21 +1,22 @@
 """
 Model SQLAlchemy da tabela `occurrences`.
 
+Campo `forwarded_to_coordinator`:
+  False (default) → ocorrência criada, ainda na alçada do DT.
+  True            → DT decidiu encaminhar para a coordenação.
+
 Nota sobre relacionamentos:
   Este model não declara relationship() intencionalmente.
   O bug do SQLAlchemy 2.x com mapped_as_dataclass causa um problema:
   após session.refresh(), um relationship com lazy='noload' e default=None
   sobrescreve o valor da FK escalar em memória, fazendo created_by_id
   virar None no objeto Python mesmo estando correto no banco.
-
-  Como OccurrencePublic usa apenas os campos escalares (student_id,
-  created_by_id), os relationships são desnecessários aqui.
 """
 
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Enum, ForeignKey, String, Text, func
+from sqlalchemy import Boolean, Enum, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_as_dataclass, mapped_column
 
 from app.domains.occurrences.enums import OccurrenceTypeEnum
@@ -41,14 +42,14 @@ class Occurrence:
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
 
-    # Tipo da ocorrência — determina a categoria do problema registrado
+    # Tipo da ocorrência
     occurrence_type: Mapped[OccurrenceTypeEnum] = mapped_column(
         Enum(OccurrenceTypeEnum, name='occurrence_type'),
         nullable=False,
         default=OccurrenceTypeEnum.OUTROS,
     )
 
-    # Quem registrou (professor/coordenador) — vira NULL se o criador for deletado
+    # Quem registrou — vira NULL se o criador for deletado
     created_by_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey('users.id', ondelete='SET NULL'),
         nullable=True,
@@ -59,6 +60,16 @@ class Occurrence:
     occurred_at: Mapped[Optional[datetime]] = mapped_column(
         nullable=True,
         default=None,
+    )
+
+    # Fluxo DT → Coordenação:
+    # False = apenas o DT vê (default ao criar)
+    # True  = DT encaminhou; coordenação vê normalmente
+    forwarded_to_coordinator: Mapped[bool] = mapped_column(
+        Boolean,
+        init=False,
+        default=False,
+        nullable=False,
     )
 
     # Metadados
