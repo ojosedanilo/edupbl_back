@@ -11,12 +11,9 @@ Hierarquia:
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict
 
 from app.domains.occurrences.enums import OccurrenceTypeEnum
-
-# Limite de dias no passado para registrar uma ocorrência (configurável separadamente dos atrasos)
-OCCURRENCE_MAX_DAYS_BACK = 7
 
 
 class OccurrenceCreate(BaseModel):
@@ -27,25 +24,6 @@ class OccurrenceCreate(BaseModel):
     description: str
     occurrence_type: OccurrenceTypeEnum = OccurrenceTypeEnum.OUTROS
     occurred_at: Optional[datetime] = None  # Se omitido, usa o momento atual
-
-    @field_validator('occurred_at')
-    @classmethod
-    def validate_occurred_at(cls, v: Optional[datetime]) -> Optional[datetime]:
-        if v is None:
-            return v
-        from datetime import timezone, timedelta
-        now = datetime.now(timezone.utc)
-        # Normaliza para UTC se naive
-        if v.tzinfo is None:
-            v = v.replace(tzinfo=timezone.utc)
-        min_allowed = now - timedelta(days=OCCURRENCE_MAX_DAYS_BACK)
-        if v < min_allowed:
-            raise ValueError(
-                f'occurred_at não pode ser mais de {OCCURRENCE_MAX_DAYS_BACK} dias no passado'
-            )
-        if v > now:
-            raise ValueError('occurred_at não pode ser no futuro')
-        return v
 
 
 class OccurrenceUpdate(BaseModel):
@@ -70,8 +48,7 @@ class OccurrencePublic(BaseModel):
     title: str
     description: str
     occurrence_type: OccurrenceTypeEnum
-    occurred_at: datetime | None
-    forwarded_to_coordinator: bool
+    occurred_at: datetime | None  # None quando não informado
     created_at: datetime
     updated_at: datetime
 

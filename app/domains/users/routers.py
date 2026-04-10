@@ -37,7 +37,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi import Path as FPath
 from fastapi.responses import FileResponse
 from PIL import Image
-from sqlalchemy import and_, or_, select, true
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.settings import AVATAR_DIR
@@ -422,19 +422,13 @@ async def search_users(
     ] = 10,
 ):
     """Busca usuários por nome ou username. Usado para autocomplete."""
-    # Suporte a busca por nome completo: "João Silva" deve encontrar o usuário
-    # mesmo que a query cruze first_name e last_name.
-    terms = [t.strip() for t in q.split() if t.strip()]
-    conditions = []
-    for term in terms:
-        conditions.append(
-            or_(
-                User.first_name.ilike(f'%{term}%'),
-                User.last_name.ilike(f'%{term}%'),
-                User.username.ilike(f'%{term}%'),
-            )
+    query = active_users().where(
+        or_(
+            User.first_name.ilike(f'%{q}%'),
+            User.last_name.ilike(f'%{q}%'),
+            User.username.ilike(f'%{q}%'),
         )
-    query = active_users().where(and_(*conditions) if conditions else true())
+    )
 
     if role:
         query = query.where(User.role == role)
@@ -689,12 +683,6 @@ async def change_my_password(
         raise HTTPException(
             status_code=HTTPStatus.UNAUTHORIZED,
             detail='Current password is incorrect',
-        )
-
-    if verify_password(data.new_password, current_user.password):
-        raise HTTPException(
-            status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
-            detail='New password must be different from the current password.',
         )
 
     current_user.password = get_password_hash(data.new_password)

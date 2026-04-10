@@ -1,26 +1,19 @@
 """
 Rotas de ocorrências disciplinares.
 
-Fluxo DT → Coordenação:
-  - Professores e DTs criam ocorrências (forwarded_to_coordinator=False).
-  - O DT pode encaminhar (PATCH /occurrences/{id}/forward).
-  - Coordenadores vêem por padrão apenas as encaminhadas (?all=true para ver todas).
-  - Existe transparência: coordenador pode ver as não-encaminhadas explicitamente.
-
 Regras de autorização por endpoint:
-  POST   /occurrences                → requer OCCURRENCES_CREATE
-  GET    /occurrences                → requer OCCURRENCES_VIEW_ALL
-  GET    /occurrences/me             → requer OCCURRENCES_VIEW_OWN
-  GET    /occurrences/{id}           → requer OCCURRENCES_VIEW_OWN + verificação
-  PUT    /occurrences/{id}           → requer OCCURRENCES_EDIT
-  DELETE /occurrences/{id}           → requer OCCURRENCES_DELETE
-  PATCH  /occurrences/{id}/forward   → requer OCCURRENCES_FORWARD (DT ou Coord)
+  POST   /occurrences          → requer OCCURRENCES_CREATE (professor/coordenador)
+  GET    /occurrences          → requer OCCURRENCES_VIEW_ALL (coordenador/admin)
+  GET    /occurrences/me       → requer OCCURRENCES_VIEW_OWN (aluno vê as suas; professor vê as que criou)
+  GET    /occurrences/{id}     → requer OCCURRENCES_VIEW_OWN + verificação por aluno
+  PUT    /occurrences/{id}     → requer OCCURRENCES_EDIT (professor só edita as próprias)
+  DELETE /occurrences/{id}     → requer OCCURRENCES_DELETE (professor só deleta as próprias)
 """
 
 from http import HTTPStatus
-from typing import Annotated, Optional
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query
+from fastapi import APIRouter, Depends, HTTPException, Path
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,10 +26,7 @@ from app.domains.occurrences.schemas import (
 )
 from app.domains.users.models import User, active_users
 from app.shared.db.database import get_session
-from app.shared.notifications.dispatcher import (
-    notify_occurrence_created,
-    notify_occurrence_forwarded,
-)
+from app.shared.notifications.dispatcher import notify_occurrence_created
 from app.shared.rbac.dependencies import PermissionChecker
 from app.shared.rbac.permissions import SystemPermissions
 from app.shared.rbac.roles import UserRole
@@ -51,6 +41,7 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 async def _get_occurrence_or_404(
     occurrence_id: int, session: AsyncSession
 ) -> Occurrence:
+    """Busca a ocorrência pelo id ou lança 404 se não existir."""
     occurrence = await session.scalar(
         select(Occurrence).where(Occurrence.id == occurrence_id)
     )
@@ -65,6 +56,7 @@ def _assert_can_modify(occurrence: Occurrence, current_user: User) -> None:
     """
     Professores só podem alterar ocorrências que eles próprios criaram.
     Coordenadores e admins podem alterar qualquer ocorrência.
+    Lança 403 se a regra for violada.
     """
     if (
         current_user.role == UserRole.TEACHER
@@ -97,8 +89,8 @@ async def create_occurrence(
     """
     Registra uma nova ocorrência sobre um aluno.
 
-    Ao criar, forwarded_to_coordinator=False.
-    O DT encaminha explicitamente via PATCH /{id}/forward.
+    O campo created_by_id é preenchido automaticamente com
+    o usuário logado — não é aceito no corpo da requisição.
     """
     student = await session.scalar(
         active_users().where(User.id == data.student_id)
@@ -114,7 +106,6 @@ async def create_occurrence(
         title=data.title,
         description=data.description,
         occurrence_type=data.occurrence_type,
-        occurred_at=data.occurred_at,
     )
 
     session.add(occurrence)
@@ -137,64 +128,9 @@ async def create_occurrence(
         Depends(PermissionChecker({SystemPermissions.OCCURRENCES_VIEW_ALL}))
     ],
 )
-async def list_all_occurrences(
-    session: Session,
-    current_user: CurrentUser,
-    include_not_forwarded: bool = Query(
-        default=False,
-        description='Se true, inclui ocorrências não encaminhadas (transparência). '
-        'Por padrão, coordenadores vêem apenas as encaminhadas.',
-    ),
-):
-    """
-    Retorna ocorrências do sistema.
-
-    Coordenadores e admins vêem por padrão apenas as encaminhadas pelo DT.
-    Com ?include_not_forwarded=true, vêem todas (transparência total).
-    Admins sempre vêem tudo (sem restrição).
-    """
-    stmt = select(Occurrence)
-
-    # Coordenador: filtra por encaminhadas a menos que peça transparência
-    if current_user.role == UserRole.COORDINATOR and not include_not_forwarded:
-        stmt = stmt.where(Occurrence.forwarded_to_coordinator == True)  # noqa: E712
-
-    result = await session.scalars(stmt.order_by(Occurrence.created_at.desc()))
-    return {'occurrences': result.all()}
-
-
-# --------------------------------------------------------------------------- #
-# GET /occurrences/classroom — Ocorrências da turma (DT)                     #
-# --------------------------------------------------------------------------- #
-
-
-@router.get(
-    '/classroom',
-    response_model=OccurrenceList,
-    dependencies=[
-        Depends(
-            PermissionChecker({
-                SystemPermissions.OCCURRENCES_VIEW_OWN_CLASSROOM
-            })
-        )
-    ],
-)
-async def list_classroom_occurrences(
-    session: Session, current_user: CurrentUser
-):
-    """
-    Lista todas as ocorrências dos alunos da turma do usuário logado.
-    Exclusivo para DTs (TEACHER + is_tutor=True).
-    """
-    if not current_user.classroom_id:
-        return {'occurrences': []}
-
-    result = await session.scalars(
-        select(Occurrence)
-        .join(User, Occurrence.student_id == User.id)
-        .where(User.classroom_id == current_user.classroom_id)
-        .order_by(Occurrence.created_at.desc())
-    )
+async def list_all_occurrences(session: Session):
+    """Retorna todas as ocorrências do sistema. Acesso restrito a coordenadores e admins."""
+    result = await session.scalars(select(Occurrence))
     return {'occurrences': result.all()}
 
 
@@ -215,7 +151,7 @@ async def list_my_occurrences(session: Session, current_user: CurrentUser):
     Lista ocorrências do usuário logado.
 
     - Aluno: ocorrências em que ele é o estudante envolvido.
-    - Professor/DT: ocorrências que ele criou.
+    - Professor/outros: ocorrências que ele criou.
     """
     if current_user.role == UserRole.STUDENT:
         stmt = select(Occurrence).where(
@@ -226,12 +162,12 @@ async def list_my_occurrences(session: Session, current_user: CurrentUser):
             Occurrence.created_by_id == current_user.id
         )
 
-    result = await session.scalars(stmt.order_by(Occurrence.created_at.desc()))
+    result = await session.scalars(stmt)
     return {'occurrences': result.all()}
 
 
 # --------------------------------------------------------------------------- #
-# GET /occurrences/{id} — Detalhe                                            #
+# GET /occurrences/{id} — Detalhe de uma ocorrência                         #
 # --------------------------------------------------------------------------- #
 
 
@@ -247,6 +183,12 @@ async def get_occurrence(
     current_user: CurrentUser,
     occurrence_id: int = Path(alias='occurrence_id'),
 ):
+    """
+    Retorna uma ocorrência específica.
+
+    Alunos só podem visualizar ocorrências em que são o estudante envolvido.
+    Professores e coordenadores podem ver qualquer uma (dentro de sua permissão).
+    """
     occurrence = await _get_occurrence_or_404(occurrence_id, session)
 
     if (
@@ -262,49 +204,7 @@ async def get_occurrence(
 
 
 # --------------------------------------------------------------------------- #
-# GET /occurrences/child — Ocorrências dos filhos (responsável)              #
-# --------------------------------------------------------------------------- #
-
-
-@router.get(
-    '/child',
-    response_model=OccurrenceList,
-    dependencies=[
-        Depends(PermissionChecker({SystemPermissions.OCCURRENCES_VIEW_CHILD}))
-    ],
-)
-async def list_child_occurrences(session: Session, current_user: CurrentUser):
-    """
-    Lista as ocorrências de todos os filhos vinculados ao responsável logado.
-
-    Retorna apenas ocorrências encaminhadas à coordenação, garantindo que
-    o responsável só é notificado de situações validadas pela escola.
-    """
-    from app.domains.users.models import guardian_student as _guardian_student
-
-    result = await session.execute(
-        select(_guardian_student.c.student_id).where(
-            _guardian_student.c.guardian_id == current_user.id
-        )
-    )
-    student_ids = [row[0] for row in result.all()]
-
-    if not student_ids:
-        return {'occurrences': []}
-
-    occurrences = await session.scalars(
-        select(Occurrence)
-        .where(
-            Occurrence.student_id.in_(student_ids),
-            Occurrence.forwarded_to_coordinator == True,  # noqa: E712
-        )
-        .order_by(Occurrence.created_at.desc())
-    )
-    return {'occurrences': occurrences.all()}
-
-
-# --------------------------------------------------------------------------- #
-# PUT /occurrences/{id} — Atualizar                                          #
+# PUT /occurrences/{id} — Atualizar ocorrência                              #
 # --------------------------------------------------------------------------- #
 
 
@@ -321,6 +221,11 @@ async def update_occurrence(
     current_user: CurrentUser,
     occurrence_id: int = Path(alias='occurrence_id'),
 ):
+    """
+    Atualiza título e/ou descrição de uma ocorrência.
+
+    Professores só podem editar ocorrências que eles próprios criaram.
+    """
     occurrence = await _get_occurrence_or_404(occurrence_id, session)
     _assert_can_modify(occurrence, current_user)
 
@@ -333,7 +238,7 @@ async def update_occurrence(
 
 
 # --------------------------------------------------------------------------- #
-# DELETE /occurrences/{id} — Apagar                                          #
+# DELETE /occurrences/{id} — Apagar ocorrência                             #
 # --------------------------------------------------------------------------- #
 
 
@@ -349,63 +254,19 @@ async def delete_occurrence(
     current_user: CurrentUser,
     occurrence_id: int = Path(alias='occurrence_id'),
 ):
+    """
+    Deleta permanentemente uma ocorrência.
+
+    Professores só podem apagar ocorrências que eles próprios criaram.
+    O refresh antes do delete garante que todos os campos estejam
+    carregados para a resposta final.
+    """
     occurrence = await _get_occurrence_or_404(occurrence_id, session)
     _assert_can_modify(occurrence, current_user)
 
+    # Garante que todos os atributos escalares estejam em memória
+    # antes do delete para que o objeto retornado na resposta seja completo
     await session.refresh(occurrence)
     await session.delete(occurrence)
     await session.commit()
-    return occurrence
-
-
-# --------------------------------------------------------------------------- #
-# PATCH /occurrences/{id}/forward — Encaminhar para a coordenação            #
-# --------------------------------------------------------------------------- #
-
-
-@router.patch(
-    '/{occurrence_id}/forward',
-    response_model=OccurrencePublic,
-)
-async def forward_occurrence(
-    session: Session,
-    current_user: CurrentUser,
-    occurrence_id: int = Path(alias='occurrence_id'),
-):
-    """
-    Encaminha uma ocorrência para a coordenação.
-
-    Pode ser feito pelo DT da turma do aluno, por qualquer coordenador ou admin.
-    Professores comuns só podem encaminhar ocorrências que eles próprios criaram.
-    Uma vez encaminhada, a ocorrência não pode ser des-encaminhada.
-    """
-    occurrence = await _get_occurrence_or_404(occurrence_id, session)
-
-    if occurrence.forwarded_to_coordinator:
-        raise HTTPException(
-            status_code=HTTPStatus.CONFLICT,
-            detail='Occurrence already forwarded to coordinator',
-        )
-
-    # Verifica permissão: coordenador/admin podem sempre; professor só a própria
-    if current_user.role == UserRole.TEACHER:
-        if (
-            occurrence.created_by_id != current_user.id
-            and not current_user.is_tutor
-        ):
-            raise HTTPException(
-                status_code=HTTPStatus.FORBIDDEN,
-                detail='Insufficient permissions',
-            )
-    elif current_user.role not in {UserRole.COORDINATOR, UserRole.ADMIN}:
-        raise HTTPException(
-            status_code=HTTPStatus.FORBIDDEN,
-            detail='Insufficient permissions',
-        )
-
-    occurrence.forwarded_to_coordinator = True
-    await session.commit()
-    await session.refresh(occurrence)
-
-    await notify_occurrence_forwarded(occurrence.id)
     return occurrence
