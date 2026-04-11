@@ -72,24 +72,25 @@ from app.domains.users.models import Classroom, User
 DATA_DIR = Path(__file__).parent.parent.parent.parent / 'data'
 HORARIOS_DIR = DATA_DIR / 'horarios'
 
-# Tipos válidos de slot
-VALID_TYPES = set(PeriodTypeEnum)
+# Tipos válidos nos CSVs de sala (planning e free pertencem ao professor, não à turma)
+VALID_TYPES = {
+    PeriodTypeEnum.CLASS_PERIOD,
+    PeriodTypeEnum.SNACK_BREAK,
+    PeriodTypeEnum.LUNCH_BREAK,
+}
+
+# Tipos de professor — rejeitados aqui, importados via seed_free_periods
+TEACHER_ONLY_TYPES = {PeriodTypeEnum.PLANNING, PeriodTypeEnum.FREE}
 
 # Títulos padrão por tipo (usado quando a coluna "titulo" está vazia)
 DEFAULT_TITLES = {
     PeriodTypeEnum.CLASS_PERIOD: 'Aula',
-    PeriodTypeEnum.PLANNING: 'Planejamento',
-    PeriodTypeEnum.FREE: 'Folga',
     PeriodTypeEnum.SNACK_BREAK: 'Intervalo',
     PeriodTypeEnum.LUNCH_BREAK: 'Almoço',
 }
 
 # Tipos que representam slots de horário da turma (não são ausência do professor)
-CLASSROOM_TYPES = {
-    PeriodTypeEnum.CLASS_PERIOD,
-    PeriodTypeEnum.SNACK_BREAK,
-    PeriodTypeEnum.LUNCH_BREAK,
-}
+CLASSROOM_TYPES = VALID_TYPES
 
 
 async def seed_schedules(session: AsyncSession) -> None:  # noqa: PLR0915
@@ -169,6 +170,15 @@ async def seed_schedules(session: AsyncSession) -> None:  # noqa: PLR0915
                     tipo = PeriodTypeEnum(tipo_raw)
                 except ValueError:
                     print(f'    ⚠️ Linha {linha_num}: tipo inválido "{tipo_raw}"')
+                    erros += 1
+                    continue
+
+                if tipo in TEACHER_ONLY_TYPES:
+                    print(
+                        f'    ⚠️ Linha {linha_num}: tipo "{tipo_raw}" não é válido '
+                        f'em horários de turma. Use folgas_professores.csv para '
+                        f'folgas/planejamentos de professores.'
+                    )
                     erros += 1
                     continue
 

@@ -60,14 +60,32 @@ class ScheduleSlot:
     # Número do período
     period_number: Mapped[Optional[int]] = mapped_column(nullable=True)
 
-    # uma turma não pode ter dois professores no mesmo período do mesmo dia
+    # Restrições de unicidade:
+    #
+    # 1. Slots de turma (classroom_id NOT NULL):
+    #    Uma turma não pode ter dois slots do mesmo tipo no mesmo dia/período.
+    #    Ex: não pode ter dois class_period diferentes no mesmo horário.
+    #
+    # 2. Slots de professor (classroom_id IS NULL, teacher_id NOT NULL):
+    #    Um professor não pode ter dois slots de planejamento/folga no mesmo dia/período.
+    #    Implementado como UniqueConstraint filtrado via Index com postgresql_where
+    #    para garantir que NULLs não conflitem entre professores distintos.
     __table_args__ = (
+        # Unicidade para slots de turma (classroom_id preenchido)
         UniqueConstraint(
             'classroom_id',
             'weekday',
             'period_number',
             'type',
             name='uq_classroom_weekday_period',
+        ),
+        # Unicidade para slots de professor (classroom_id NULL)
+        UniqueConstraint(
+            'teacher_id',
+            'weekday',
+            'period_number',
+            'type',
+            name='uq_teacher_weekday_period',
         ),
     )
 

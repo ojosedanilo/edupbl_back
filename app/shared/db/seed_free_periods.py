@@ -193,7 +193,7 @@ async def _import_free_slots(session: AsyncSession) -> None:
             slot = ScheduleSlot(
                 type=PeriodTypeEnum.FREE,
                 title='Folga',
-                classroom_id=None,  # type: ignore[arg-type]
+                classroom_id=None,
                 teacher_id=teacher_id,
                 weekday=weekday,
                 period_number=period_number,
@@ -287,7 +287,7 @@ async def seed_planning_slots(session: AsyncSession) -> None:
                 slot = ScheduleSlot(
                     type=PeriodTypeEnum.PLANNING,
                     title='Planejamento',
-                    classroom_id=None,  # type: ignore[arg-type]
+                    classroom_id=None,
                     teacher_id=teacher_id,
                     weekday=weekday,
                     period_number=period_number,

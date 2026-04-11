@@ -12,11 +12,11 @@ class WeekdayEnum(IntEnum):
 
 
 class PeriodTypeEnum(str, Enum):
-    CLASS_PERIOD = "class_period"  # Aula
-    PLANNING = "planning"  # Intervalo do almoço
-    FREE = "free"  # Intervalo do lanche
-    SNACK_BREAK = "snack_break"  # Livre
-    LUNCH_BREAK = "lunch_break"  # Planejamento
+    CLASS_PERIOD = "class_period"  # Aula normal (professor + turma)
+    PLANNING = "planning"         # Planejamento do professor (sem turma)
+    FREE = "free"                 # Folga do professor (sem turma)
+    SNACK_BREAK = "snack_break"   # Intervalo de lanche (turma, sem professor)
+    LUNCH_BREAK = "lunch_break"   # Intervalo de almoço (turma, sem professor)
 
     @property
     def default_title(self) -> str:
