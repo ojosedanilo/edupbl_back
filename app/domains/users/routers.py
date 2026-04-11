@@ -178,7 +178,7 @@ async def _process_avatar_upload(
 
 
 @router.post(
-    '/',
+    '',
     status_code=HTTPStatus.CREATED,
     response_model=UserPublic,
     dependencies=[Depends(PermissionChecker({SystemPermissions.USER_CREATE}))],
@@ -250,7 +250,7 @@ async def create_user(user: UserSchema, session: Session):
 
 
 @router.get(
-    '/',
+    '',
     response_model=UserList,
     dependencies=[
         Depends(PermissionChecker({SystemPermissions.USER_VIEW_ALL}))

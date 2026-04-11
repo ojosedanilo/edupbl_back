@@ -111,7 +111,7 @@ async def list_my_delays(session: Session, current_user: CurrentUser):
 
 
 @router.post(
-    '/',
+    '',
     status_code=HTTPStatus.CREATED,
     response_model=DelayPublic,
     dependencies=[
@@ -205,7 +205,7 @@ async def create_delay(
 
 
 @router.get(
-    '/',
+    '',
     response_model=DelayList,
     dependencies=[
         Depends(PermissionChecker({SystemPermissions.DELAYS_VIEW_ALL}))

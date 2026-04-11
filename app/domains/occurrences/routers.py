@@ -74,7 +74,7 @@ def _assert_can_modify(occurrence: Occurrence, current_user: User) -> None:
 
 
 @router.post(
-    '/',
+    '',
     status_code=HTTPStatus.CREATED,
     response_model=OccurrencePublic,
     dependencies=[
@@ -122,7 +122,7 @@ async def create_occurrence(
 
 
 @router.get(
-    '/',
+    '',
     response_model=OccurrenceList,
     dependencies=[
         Depends(PermissionChecker({SystemPermissions.OCCURRENCES_VIEW_ALL}))

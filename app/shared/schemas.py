@@ -9,6 +9,15 @@ class Message(BaseModel):
     message: str
 
 
+class HealthResponse(BaseModel):
+    """Resposta do endpoint de health check (GET /)."""
+
+    message: str
+    environment: str
+    database_status: str  # 'online' | 'offline'
+    database_url: str
+
+
 class FilterPage(BaseModel):
     """Parâmetros de paginação para endpoints de listagem."""
 
