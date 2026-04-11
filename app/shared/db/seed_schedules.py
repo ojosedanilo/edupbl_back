@@ -1,10 +1,10 @@
 """
-Importação de horários via CSVs.
+Importação de horários de turmas via CSVs.
 
 Formato esperado — um CSV por turma:
   horario_sala_1.csv, horario_sala_2.csv, ..., horario_sala_12.csv
 
-Cada linha representa um slot no horário semanal:
+Cada linha representa um slot de **aula ou intervalo da turma**:
 
   email_professor,dia_semana,numero_periodo,tipo,titulo
 
@@ -12,7 +12,7 @@ Colunas
 -------
 email_professor
     E-mail do professor responsável pelo slot.
-    Deixe VAZIO para horários sem professor (folga ou planejamento).
+    Obrigatório para ``class_period``. Deixe vazio para intervalos.
 
 dia_semana
     Número do dia: 2=segunda, 3=terça, 4=quarta, 5=quinta, 6=sexta.
@@ -23,14 +23,17 @@ numero_periodo
     Deixe VAZIO para intervalos (snack_break / lunch_break).
 
 tipo
-    - class_period  → aula normal  (professor obrigatório)
-    - planning      → horário de planejamento (sem aula, sem professor na sala)
-    - free          → turno de folga do professor
-    - snack_break   → intervalo de lanche  (sem professor)
-    - lunch_break   → intervalo de almoço  (sem professor)
+    - class_period  → aula normal (professor obrigatório)
+    - snack_break   → intervalo de lanche (sem professor)
+    - lunch_break   → intervalo de almoço (sem professor)
+
+    ⚠️  NÃO use ``planning`` nem ``free`` aqui. Folgas e planejamentos são
+    propriedades do professor, não da turma. Use o arquivo
+    ``data/horarios/folgas_professores.csv`` e rode
+    ``seed_db.py --real-free-periods``.
 
 titulo
-    Rótulo exibido no horário (ex: "Matemática", "Planejamento", "Folga").
+    Rótulo exibido no horário (ex: "Matemática").
     Opcional — se omitido, usa o valor padrão do tipo.
 
 Exemplos de linhas válidas
@@ -38,14 +41,11 @@ Exemplos de linhas válidas
 # Aula normal com professor:
 maria.silva@escola.com,2,1,class_period,Matemática
 
-# Horário de planejamento (professor não está na sala):
-joao.santos@escola.com,4,3,planning,Planejamento
-
-# Folga do professor (turno livre):
-,5,,free,Folga
-
-# Intervalo de lanche (automático, sem professor):
+# Intervalo de lanche (sem professor):
 ,2,,snack_break,Intervalo
+
+# Intervalo de almoço (sem professor):
+,2,,lunch_break,Almoço
 
 Idempotência
 ------------

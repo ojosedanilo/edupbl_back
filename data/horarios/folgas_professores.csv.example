@@ -1,0 +1,21 @@
+email,dia_semana,numero_slot
+# Formato: email do professor, dia da semana (2=seg … 6=sex), número do slot (1–9)
+# Slots não listados aqui e não marcados como aula viram "Planejamento" automaticamente.
+#
+# Exemplo — Maria Silva tem folga na 5ª aula de toda segunda, quarta e sexta:
+maria.silva@escola.com,2,5
+maria.silva@escola.com,4,5
+maria.silva@escola.com,6,5
+#
+# Exemplo — João Santos tem folga nos slots 4 e 5 de terça e quinta:
+joao.santos@escola.com,3,4
+joao.santos@escola.com,3,5
+joao.santos@escola.com,5,4
+joao.santos@escola.com,5,5
+#
+# Exemplo — Ana Costa tem folga no slot 9 de segunda a sexta:
+ana.costa@escola.com,2,9
+ana.costa@escola.com,3,9
+ana.costa@escola.com,4,9
+ana.costa@escola.com,5,9
+ana.costa@escola.com,6,9

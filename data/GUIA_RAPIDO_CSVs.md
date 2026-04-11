@@ -103,7 +103,12 @@ José,Porteiro,jose.porteiro@escola.com,Port2024!,porter
 
 ## 📅 CSVs de Horário (`data/horarios/`)
 
-Um arquivo por turma: `horario_sala_1.csv`, `horario_sala_2.csv`, ..., `horario_sala_12.csv`
+### Arquivos de grade por turma
+
+Um arquivo por turma: `horario_sala_1.csv`, ..., `horario_sala_12.csv`
+
+Cada linha representa um slot de **aula ou intervalo da turma**. Slots de folga
+e planejamento do professor **não entram aqui** — veja `folgas_professores.csv` abaixo.
 
 ```csv
 email_professor,dia_semana,numero_periodo,tipo,titulo
@@ -112,39 +117,82 @@ maria.silva@escola.com,2,2,class_period,Matemática
 joao.santos@escola.com,2,3,class_period,Português
 ,2,,snack_break,Intervalo
 ana.costa@escola.com,2,4,class_period,Ciências
+ana.costa@escola.com,2,5,class_period,Ciências
 ,2,,lunch_break,Almoço
-pedro.prof@escola.com,2,5,class_period,História
-joao.santos@escola.com,4,3,planning,Planejamento
-,5,,free,Folga
+pedro.prof@escola.com,2,6,class_period,História
 ```
 
 **Dias:** 2=segunda, 3=terça, 4=quarta, 5=quinta, 6=sexta
 
-**Tipos:**
-- `class_period` → aula (professor obrigatório pelo e-mail)
-- `planning` → planejamento (professor fora da sala)
-- `free` → folga (professor não está na escola)
-- `snack_break` → intervalo de lanche
-- `lunch_break` → intervalo de almoço
+**Tipos válidos neste arquivo:**
+- `class_period` → aula normal (e-mail do professor obrigatório)
+- `snack_break` → intervalo de lanche (e-mail vazio)
+- `lunch_break` → intervalo de almoço (e-mail vazio)
+
+> ⚠️ **Não use `planning` nem `free` aqui.** Esses tipos são de responsabilidade
+> do professor, não da turma. Use `folgas_professores.csv` para isso.
+
+---
+
+### `folgas_professores.csv` — Folgas por professor
+
+Arquivo único para declarar os slots de **folga semanal** de cada professor.
+O sistema gera automaticamente os slots de **planejamento** para todos os
+demais períodos que não sejam aula nem folga.
+
+```
+data/horarios/folgas_professores.csv
+```
+
+```csv
+email,dia_semana,numero_slot
+maria.silva@escola.com,2,5
+maria.silva@escola.com,4,5
+maria.silva@escola.com,6,5
+joao.santos@escola.com,3,4
+joao.santos@escola.com,3,5
+joao.santos@escola.com,5,4
+joao.santos@escola.com,5,5
+```
+
+**Colunas:**
+- `email` — e-mail do professor (deve existir no banco)
+- `dia_semana` — 2=segunda … 6=sexta
+- `numero_slot` — número do período de aula (1–9)
+
+**Como funciona o planejamento automático:**
+Após importar as folgas, o sistema percorre todos os professores com aulas
+cadastradas e cria um slot `planning` em cada combinação (dia × período) que
+**não** esteja marcada como `class_period` nem como `free`. Não é necessário
+listar os planejamentos manualmente.
 
 ---
 
 ## ▶️ Como Importar
 
-### Todos os dados reais juntos:
+### Tudo de uma vez (recomendado):
 ```bash
 uv run python scripts/seed_db.py --real
 ```
+Importa usuários + horários de turmas + folgas/planejamentos na ordem correta.
 
-### Todos os dados de teste juntos:
+### Por etapas (quando necessário):
+```bash
+# 1. Usuários
+uv run python scripts/seed_db.py --real-users
+
+# 2. Horários de turmas (requer professores no banco)
+uv run python scripts/seed_db.py --real-schedules
+
+# 3. Folgas e planejamentos (requer aulas no banco)
+uv run python scripts/seed_db.py --real-free-periods
+```
+
+### Dados de teste (desenvolvimento):
 ```bash
 uv run python scripts/seed_db.py --tests
 ```
-
-### Tudo (Dados reais + Dados de teste):
-```bash
-uv run python scripts/seed_db.py --all
-```
+Cria 7 usuários com senhas simples. Não misture com `--real`.
 
 ---
 
@@ -158,6 +206,7 @@ uv run python scripts/seed_db.py --all
 6. **porteiros.csv** → Porteiros
 7. **responsaveis.csv** → Pais dos alunos
 8. **horario_sala_N.csv** → Grade de cada turma (após importar professores)
+9. **folgas_professores.csv** → Folgas por professor (gera planejamentos automaticamente)
 
 ---
 

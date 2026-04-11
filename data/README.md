@@ -24,9 +24,12 @@ data/
 ├── avatars/           # ⚙️ Gerado automaticamente em runtime — NÃO editar
 │   └── {user_id}.webp # Criado pelo seed ou pelo endpoint PATCH /users/me/avatar
 │
-└── horarios/          # CSVs de grade horária (um por turma)
-    ├── horario_sala_1.csv   →  1º ano A
-    └── horario_sala_12.csv  →  3º ano D
+└── horarios/          # CSVs de grade horária
+    ├── horario_sala_1.csv    →  grade da turma 1º ano A  (aulas + intervalos)
+    ├── ...
+    ├── horario_sala_12.csv   →  grade da turma 3º ano D
+    └── folgas_professores.csv →  folgas semanais por professor
+                                   (planejamentos gerados automaticamente)
 ```
 
 ---
@@ -126,25 +129,29 @@ cp /sua/pasta/fotos/*.jpg data/fotos/
 # Crie os CSVs referenciando os arquivos pelo nome
 data/usuarios/alunos.csv
 data/horarios/horario_sala_1.csv
+data/horarios/folgas_professores.csv
 ```
 
-### 2. Importar Usuários
+### 2. Importar tudo de uma vez (recomendado)
 
 ```bash
 cd backend
 uv run python scripts/seed_db.py --real
 ```
 
-### 3. Importar Horários
+Importa usuários, horários de turmas e folgas/planejamentos na ordem correta.
+
+### 3. Importar por etapas
 
 ```bash
-uv run python scripts/seed_db.py --schedules
-```
+# Apenas usuários
+uv run python scripts/seed_db.py --real-users
 
-### 4. Ambos de uma vez
+# Apenas horários de turmas (requer professores no banco)
+uv run python scripts/seed_db.py --real-schedules
 
-```bash
-uv run python scripts/seed_db.py --real --schedules
+# Apenas folgas e planejamentos (requer aulas no banco)
+uv run python scripts/seed_db.py --real-free-periods
 ```
 
 ---
@@ -178,7 +185,9 @@ Endpoint: `PATCH /users/me/password`
 Para desenvolvimento/testes, use usuários fake (sem CSVs):
 
 ```bash
-uv run python scripts/seed_db.py
+uv run python scripts/seed_db.py --tests
 ```
 
 Isso cria 7 usuários de teste sem precisar de nenhum CSV.
+Os usuários de teste **não** são criados automaticamente ao iniciar o servidor —
+execute o comando acima manualmente quando precisar.

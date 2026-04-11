@@ -43,8 +43,10 @@ class ScheduleSlot:
     title: Mapped[str] = mapped_column(String(200), nullable=False)
 
     # IDs da sala e do professor
-    classroom_id: Mapped[int] = mapped_column(
-        ForeignKey('classrooms.id', ondelete='CASCADE'), nullable=False
+    # classroom_id é NULL para slots que pertencem ao professor e não a uma
+    # turma específica (ex: planejamento e folga do professor).
+    classroom_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey('classrooms.id', ondelete='CASCADE'), nullable=True
     )
     teacher_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey('users.id', ondelete='SET NULL'), nullable=True

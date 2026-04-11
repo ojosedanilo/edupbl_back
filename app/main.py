@@ -28,7 +28,6 @@ from app.domains.occurrences import routers as occurrences_routers
 from app.domains.schedules import routers as schedules_routers
 from app.domains.users import routers as users_routers
 from app.shared.db.database import SessionLocal, get_session
-from app.shared.db.seed import seed_test_users
 from app.shared.schemas import HealthResponse
 
 
@@ -36,14 +35,9 @@ from app.shared.schemas import HealthResponse
 async def lifespan(app: FastAPI):
     """
     Executado na inicialização (antes do yield) e no encerramento (após).
-    O bloco de seed só roda em development para não poluir produção.
+    O seed de dados NÃO roda automaticamente no boot — use o script
+    ``scripts/seed_db.py`` para popular o banco manualmente.
     """
-    if settings.ENVIRONMENT == 'development':
-        async with SessionLocal() as session:
-            try:
-                await seed_test_users(session)
-            except Exception as e:
-                print(f'[seed] Aviso: {e}')
     yield
 
 

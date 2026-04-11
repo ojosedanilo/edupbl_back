@@ -9,7 +9,8 @@ sem argumentos            Popula tudo com dados reais (usuários + horários).
 
 --real                    Popula todos os domínios com dados reais.
 --real-users              Popula apenas usuários com dados reais (CSVs).
---real-schedules          Popula apenas horários com dados reais (CSVs).
+--real-schedules          Popula apenas horários de turmas com dados reais (CSVs).
+--real-free-periods       Importa folgas de professores e gera planejamentos.
 
 --tests                   Popula todos os domínios com dados de teste.
 --tests-users             Popula apenas usuários com dados de teste.
@@ -21,6 +22,7 @@ uv run python scripts/seed_db.py
 uv run python scripts/seed_db.py --real
 uv run python scripts/seed_db.py --real-users
 uv run python scripts/seed_db.py --real-schedules
+uv run python scripts/seed_db.py --real-free-periods
 uv run python scripts/seed_db.py --tests
 uv run python scripts/seed_db.py --tests-users
 
@@ -30,10 +32,15 @@ Usuários lidos de data/usuários/:
   admins.csv, coordenadores.csv, professores.csv, professores_dt.csv,
   alunos.csv, porteiros.csv, responsaveis.csv
 
-Horários lidos de data/horarios/:
+Horários de turmas lidos de data/horarios/:
   horario_sala_1.csv … horario_sala_12.csv
 
+Folgas e planejamentos lidos de data/horarios/:
+  folgas_professores.csv  (folgas explícitas por professor)
+  → planejamentos gerados automaticamente para os demais slots
+
 Os usuários (professores) devem estar no banco antes de importar horários.
+Os horários de aula devem estar no banco antes de importar folgas/planejamentos.
 
 Dados de teste
 --------------
@@ -53,6 +60,7 @@ import sys
 
 from app.shared.db.database import SessionLocal
 from app.shared.db.seed import seed_real_users, seed_test_users
+from app.shared.db.seed_free_periods import seed_free_periods
 from app.shared.db.seed_schedules import seed_schedules
 
 # ---------------------------------------------------------------------------
@@ -97,6 +105,11 @@ async def _run_real_schedules(session) -> None:
     await seed_schedules(session)
 
 
+async def _run_real_free_periods(session) -> None:
+    print('\n🏖️  Importando folgas e gerando planejamentos...')
+    await seed_free_periods(session)
+
+
 async def _run_test_users(session) -> None:
     print('\n👤 Criando usuários de teste...')
     await seed_test_users(session)
@@ -119,12 +132,12 @@ async def main() -> None:
         description='Popula o banco de dados com usuários e/ou horários.',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
-            'sem argumentos  →  equivalente a --real\n'
-            '--real          →  todos os domínios reais\n'
-            '--tests         →  todos os domínios de teste\n'
-            '--real-{dom}    →  apenas aquele domínio real\n'
-            '--tests-{dom}   →  apenas aquele domínio de teste\n'
-            '\nDomínios disponíveis: users, schedules'
+            'sem argumentos       →  equivalente a --real\n'
+            '--real               →  todos os domínios reais\n'
+            '--tests              →  todos os domínios de teste\n'
+            '--real-{dom}         →  apenas aquele domínio real\n'
+            '--tests-{dom}        →  apenas aquele domínio de teste\n'
+            '\nDomínios disponíveis: users, schedules, free-periods'
         ),
     )
 
@@ -132,7 +145,7 @@ async def main() -> None:
     parser.add_argument(
         '--real',
         action='store_true',
-        help='Importa todos os dados reais (usuários + horários via CSV).',
+        help='Importa todos os dados reais (usuários + horários + folgas/planejamentos via CSV).',
     )
     parser.add_argument(
         '--tests',
@@ -151,7 +164,16 @@ async def main() -> None:
         '--real-schedules',
         action='store_true',
         dest='real_schedules',
-        help='Importa apenas horários reais (CSVs de data/horarios/).',
+        help='Importa apenas horários de turmas (CSVs de data/horarios/horario_sala_N.csv).',
+    )
+    parser.add_argument(
+        '--real-free-periods',
+        action='store_true',
+        dest='real_free_periods',
+        help=(
+            'Importa folgas de professores (data/horarios/folgas_professores.csv) '
+            'e gera automaticamente os horários de planejamento para os demais slots.'
+        ),
     )
 
     # flags por domínio — tests
@@ -174,11 +196,12 @@ async def main() -> None:
     no_args = not any(vars(args).values())
     run_real_users = no_args or args.real or args.real_users
     run_real_schedules = no_args or args.real or args.real_schedules
+    run_real_free_periods = no_args or args.real or args.real_free_periods
     run_test_users = args.tests or args.tests_users
     warn_no_test_schedules = args.tests or args.tests_schedules
 
     # Conflito: real e tests ao mesmo tempo
-    if (run_real_users or run_real_schedules) and (
+    if (run_real_users or run_real_schedules or run_real_free_periods) and (
         run_test_users or warn_no_test_schedules
     ):
         print('❌ Não é possível combinar flags --real e --tests.')
@@ -187,20 +210,27 @@ async def main() -> None:
 
     try:
         async with SessionLocal() as session:
-            if run_real_users and run_real_schedules:
-                _header('Modo: DADOS REAIS COMPLETOS (usuários + horários)')
-                await _run_real_users(session)
-                await _run_real_schedules(session)
-                _warn_real_users()
+            if run_real_users or run_real_schedules or run_real_free_periods:
+                if run_real_users and run_real_schedules and run_real_free_periods:
+                    _header('Modo: DADOS REAIS COMPLETOS (usuários + horários + folgas/planejamentos)')
+                elif run_real_users and run_real_schedules:
+                    _header('Modo: DADOS REAIS — usuários + horários de turmas')
+                elif run_real_users:
+                    _header('Modo: USUÁRIOS REAIS')
+                elif run_real_schedules and run_real_free_periods:
+                    _header('Modo: HORÁRIOS REAIS — turmas + folgas/planejamentos')
+                elif run_real_schedules:
+                    _header('Modo: HORÁRIOS DE TURMAS')
+                elif run_real_free_periods:
+                    _header('Modo: FOLGAS E PLANEJAMENTOS')
 
-            elif run_real_users:
-                _header('Modo: USUÁRIOS REAIS')
-                await _run_real_users(session)
-                _warn_real_users()
-
-            elif run_real_schedules:
-                _header('Modo: HORÁRIOS REAIS')
-                await _run_real_schedules(session)
+                if run_real_users:
+                    await _run_real_users(session)
+                    _warn_real_users()
+                if run_real_schedules:
+                    await _run_real_schedules(session)
+                if run_real_free_periods:
+                    await _run_real_free_periods(session)
 
             elif run_test_users:
                 _header('Modo: DADOS DE TESTE')
@@ -221,8 +251,10 @@ async def main() -> None:
         print('   • Migrations não rodadas (alembic upgrade head)')
         print('   • CSVs em formato incorreto ou ausentes')
         print('   • Professores não importados antes dos horários')
+        print('   • Horários de turmas não importados antes das folgas/planejamentos')
         sys.exit(1)
 
 
 if __name__ == '__main__':
     asyncio.run(main())
+
