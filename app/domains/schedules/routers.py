@@ -18,6 +18,12 @@ Regras de autorização por endpoint:
          → SCHEDULES_VIEW_(OWN | CHILD | ALL)
          → validação secundária por contexto (turma)
 
+  GET    /schedules/teachers
+         → SCHEDULES_VIEW_(OWN | CHILD | ALL)
+         → VIEW_ALL → todos os professores ativos
+         → VIEW_OWN (professor) → apenas o próprio perfil
+         → VIEW_CHILD (responsável) → professores das turmas dos filhos
+
   POST   /schedules/slots
   PUT    /schedules/slots/{slot_id}
   DELETE /schedules/slots/{slot_id}
@@ -33,10 +39,10 @@ Regras de autorização por endpoint:
 
 from datetime import datetime
 from http import HTTPStatus
-from typing import Annotated
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Path
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
+from sqlalchemy import exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domains.schedules.helpers import get_current_teacher
@@ -47,6 +53,9 @@ from app.domains.schedules.models import (
 )
 from app.domains.schedules.periods import PERIODS
 from app.domains.schedules.schemas import (
+    BulkClassroomsResponse,
+    BulkOverridesResponse,
+    BulkTeachersResponse,
     OverrideCreate,
     OverrideList,
     OverridePublic,
@@ -54,6 +63,8 @@ from app.domains.schedules.schemas import (
     SlotCreate,
     SlotList,
     SlotPublic,
+    TeacherSummary,
+    TeacherSummaryList,
 )
 from app.domains.users.models import User, guardian_student
 from app.domains.users.routers import get_current_user
@@ -523,15 +534,100 @@ async def delete_override(
     return pub.model_copy(update={'classroom_ids': cids})
 
 
-'''
+@router.get(
+    '/bulk/classrooms',
+    response_model=BulkClassroomsResponse,
+    dependencies=[
+        Depends(
+            AnyPermissionChecker({
+                SystemPermissions.SCHEDULES_VIEW_ALL,
+                SystemPermissions.SCHEDULES_VIEW_OWN,
+                SystemPermissions.SCHEDULES_VIEW_CHILD,
+            })
+        )
+    ],
+)
+async def bulk_classroom_schedules(
+    session: Session,
+    current_user: CurrentUser,
+    ids: list[int] = Query(
+        ..., description='IDs das turmas separados por vírgula'
+    ),
+):
+    """
+    Retorna slots de múltiplas turmas em uma única query, agrupados por
+    classroom_id. Aplica as mesmas regras de acesso do endpoint individual:
+
+      - VIEW_ALL  → qualquer turma da lista
+      - VIEW_OWN  → apenas a própria turma (filtra ids automaticamente)
+      - VIEW_CHILD → apenas turmas com filho do responsável (filtra automaticamente)
+
+    IDs não autorizados são silenciosamente ignorados — nunca dispara 403
+    para o conjunto todo, apenas remove turmas sem acesso.
+    """
+    # 1. Determinar quais classroom_ids o usuário pode realmente ver
+    if require_permission(current_user, SystemPermissions.SCHEDULES_VIEW_ALL):
+        allowed_ids = ids
+
+    elif require_permission(
+        current_user, SystemPermissions.SCHEDULES_VIEW_OWN
+    ):
+        # Aluno/Professor só enxerga a própria turma
+        allowed_ids = (
+            [current_user.classroom_id]
+            if current_user.classroom_id in ids
+            else []
+        )
+
+    elif require_permission(
+        current_user, SystemPermissions.SCHEDULES_VIEW_CHILD
+    ):
+        # Responsável: apenas turmas onde tem filho
+        rows = await session.scalars(
+            select(User.classroom_id)
+            .join(
+                guardian_student,
+                (guardian_student.c.student_id == User.id)
+                & (guardian_student.c.guardian_id == current_user.id),
+            )
+            .where(
+                User.classroom_id.is_not(None),
+                User.classroom_id.in_(ids),
+            )
+            .distinct()
+        )
+        allowed_ids = [cid for cid in rows.all() if cid is not None]
+
+    else:
+        raise HTTPException(403, 'Insufficient permissions')
+
+    if not allowed_ids:
+        return BulkClassroomsResponse(slots_by_classroom={})
+
+    # 2. Uma única query para todos os slots
+    result = await session.scalars(
+        select(ScheduleSlot).where(ScheduleSlot.classroom_id.in_(allowed_ids))
+    )
+
+    slots_by_classroom: dict[int, list[SlotPublic]] = {
+        cid: [] for cid in allowed_ids
+    }
+    for slot in result.all():
+        slots_by_classroom[slot.classroom_id].append(
+            SlotPublic.model_validate(slot)
+        )
+
+    return BulkClassroomsResponse(slots_by_classroom=slots_by_classroom)
+
+
 # --------------------------------------------------------------------------- #
-# GET /schedules/current-lesson — Aula atual do professor logado             #
+# GET /schedules/bulk/teachers                                                #
 # --------------------------------------------------------------------------- #
 
 
 @router.get(
-    '/current-lesson',
-    response_model=dict,
+    '/bulk/teachers',
+    response_model=BulkTeachersResponse,
     dependencies=[
         Depends(
             AnyPermissionChecker({
@@ -541,68 +637,293 @@ async def delete_override(
         )
     ],
 )
-async def get_current_lesson(
+async def bulk_teacher_schedules(
+    session: Session,
+    current_user: CurrentUser,
+    ids: list[int] = Query(
+        ..., description='IDs dos professores separados por vírgula'
+    ),
+):
+    """
+    Retorna slots de múltiplos professores em uma única query, agrupados por
+    teacher_id. Regras de acesso:
+
+      - Coordenadores/Admins (VIEW_ALL) → qualquer professor da lista
+      - Professores (VIEW_OWN, mas com VIEW_ALL no RBAC): só o próprio id
+        (outros ids são silenciosamente removidos)
+
+    IDs não autorizados são silenciosamente ignorados.
+    """
+    if current_user.role == UserRole.TEACHER:
+        # Professor só pode ver a própria grade
+        allowed_ids = [current_user.id] if current_user.id in ids else []
+    elif require_permission(
+        current_user, SystemPermissions.SCHEDULES_VIEW_ALL
+    ):
+        allowed_ids = ids
+    else:
+        raise HTTPException(403, 'Insufficient permissions')
+
+    if not allowed_ids:
+        return BulkTeachersResponse(slots_by_teacher={})
+
+    result = await session.scalars(
+        select(ScheduleSlot).where(ScheduleSlot.teacher_id.in_(allowed_ids))
+    )
+
+    slots_by_teacher: dict[int, list[SlotPublic]] = {
+        tid: [] for tid in allowed_ids
+    }
+    for slot in result.all():
+        if slot.teacher_id in slots_by_teacher:
+            slots_by_teacher[slot.teacher_id].append(
+                SlotPublic.model_validate(slot)
+            )
+
+    return BulkTeachersResponse(slots_by_teacher=slots_by_teacher)
+
+
+# --------------------------------------------------------------------------- #
+# GET /schedules/bulk/overrides                                               #
+# --------------------------------------------------------------------------- #
+
+
+@router.get(
+    '/bulk/overrides',
+    response_model=BulkOverridesResponse,
+    dependencies=[
+        Depends(
+            AnyPermissionChecker({
+                SystemPermissions.SCHEDULES_VIEW_ALL,
+                SystemPermissions.SCHEDULES_VIEW_OWN,
+                SystemPermissions.SCHEDULES_VIEW_CHILD,
+            })
+        )
+    ],
+)
+async def bulk_overrides(
+    session: Session,
+    classroom_ids: list[int] = Query(
+        default=[],
+        description='Turmas de interesse (opcional)',
+    ),
+    teacher_ids: list[int] = Query(
+        default=[],
+        description='Professores de interesse (opcional)',
+    ),
+):
+    """
+    Retorna todos os overrides relevantes para o conjunto de turmas/professores
+    informado, em uma única query:
+
+      - Sempre inclui overrides com affects_all=True (impactam toda a escola)
+      - Inclui overrides vinculados a qualquer classroom_id da lista
+      - Inclui overrides vinculados a qualquer teacher_id da lista
+
+    Pelo menos um dos parâmetros (classroom_ids ou teacher_ids) deve ser
+    fornecido; se ambos forem omitidos, retorna apenas overrides affects_all.
+    """
+
+    # Subquery: override tem pelo menos uma das classroom_ids pedidas
+    classroom_filter = (
+        exists().where(
+            override_classrooms.c.override_id == ScheduleOverride.id,
+            override_classrooms.c.classroom_id.in_(classroom_ids),
+        )
+        if classroom_ids
+        else None
+    )
+
+    # Filtro direto por teacher_id
+    teacher_filter = (
+        ScheduleOverride.teacher_id.in_(teacher_ids) if teacher_ids else None
+    )
+
+    # Monta condição: affects_all OU classroom match OU teacher match
+    conditions = [ScheduleOverride.affects_all.is_(True)]
+    if classroom_filter is not None:
+        conditions.append(classroom_filter)
+    if teacher_filter is not None:
+        conditions.append(teacher_filter)
+
+    result = await session.scalars(
+        select(ScheduleOverride)
+        .where(or_(*conditions))
+        .order_by(ScheduleOverride.override_date.desc())
+    )
+    overrides = list(result.all())
+
+    # Popula classroom_ids de cada override a partir da tabela de associação
+    # Uma única query usando IN para evitar N+1
+    non_all_ids = [ov.id for ov in overrides if not ov.affects_all]
+    classroom_map: dict[int, list[int]] = {}
+    if non_all_ids:
+        assoc_rows = await session.execute(
+            select(
+                override_classrooms.c.override_id,
+                override_classrooms.c.classroom_id,
+            ).where(override_classrooms.c.override_id.in_(non_all_ids))
+        )
+        for override_id, classroom_id in assoc_rows.all():
+            classroom_map.setdefault(override_id, []).append(classroom_id)
+
+    output: list[OverridePublic] = []
+    for ov in overrides:
+        pub = OverridePublic.model_validate(ov)
+        cids = None if ov.affects_all else classroom_map.get(ov.id, [])
+        output.append(pub.model_copy(update={'classroom_ids': cids}))
+
+    return BulkOverridesResponse(overrides=output)
+
+
+# --------------------------------------------------------------------------- #
+# GET /schedules/guardian — Turmas e horários dos filhos do responsável      #
+# --------------------------------------------------------------------------- #
+
+
+@router.get(
+    '/guardian',
+    dependencies=[
+        Depends(
+            AnyPermissionChecker({
+                SystemPermissions.SCHEDULES_VIEW_CHILD,
+                SystemPermissions.SCHEDULES_VIEW_ALL,
+            })
+        )
+    ],
+)
+async def list_guardian_schedules(
     session: Session,
     current_user: CurrentUser,
 ):
     """
-    Retorna informações da aula atual do professor logado.
-    Inclui turma, horário, etc., se estiver em período de aula.
+    Retorna um dicionário { classroom_id: [slots] } com os horários de todas
+    as turmas que têm pelo menos um aluno do qual o usuário logado é responsável.
+
+    Acessível por:
+      - Responsáveis (SCHEDULES_VIEW_CHILD) → apenas turmas dos seus filhos
+      - Admins/Coordenadores (SCHEDULES_VIEW_ALL) → idem (escopo de responsável)
     """
-    from datetime import datetime
-
-    now = datetime.now().time()
-    teacher = await get_current_teacher(current_user.id, now, session)
-
-    if not teacher:
-        return {'in_class': False}
-
-    # Buscar o slot atual
-    current_period = get_current_period(now, PERIODS)
-    weekday = WeekdayEnum((date.today().weekday() + 1) % 7 + 1)
-
-    # Verificar override primeiro
-    schedule_override = await session.scalar(
-        select(ScheduleOverride)
-        .join(override_classrooms)
-        .where(
-            ScheduleOverride.date == date.today(),
-            ScheduleOverride.start_time <= now,
-            ScheduleOverride.end_time > now,
-            ScheduleOverride.teacher_id == current_user.id,
+    # 1. Descobrir quais classroom_ids o responsável tem acesso
+    rows = await session.scalars(
+        select(User.classroom_id)
+        .join(
+            guardian_student,
+            (guardian_student.c.student_id == User.id)
+            & (guardian_student.c.guardian_id == current_user.id),
         )
+        .where(User.classroom_id.is_not(None))
+        .distinct()
     )
+    classroom_ids: list[int] = [cid for cid in rows.all() if cid is not None]
 
-    if schedule_override:
-        classroom_id = await session.scalar(
-            select(override_classrooms.c.classroom_id).where(
-                override_classrooms.c.override_id == schedule_override.id
-            )
-        )
-        return {
-            'in_class': True,
-            'classroom_id': classroom_id,
-            'period': current_period.dict() if current_period else None,
-            'weekday': weekday.value,
-        }
+    if not classroom_ids:
+        return {}
 
-    # Slot regular
-    slot = await session.scalar(
+    # 2. Buscar todos os slots de uma vez
+    result = await session.scalars(
         select(ScheduleSlot).where(
-            ScheduleSlot.teacher_id == current_user.id,
-            ScheduleSlot.weekday == weekday,
-            ScheduleSlot.start_time <= now,
-            ScheduleSlot.end_time > now,
+            ScheduleSlot.classroom_id.in_(classroom_ids)
         )
     )
+    slots = result.all()
 
-    if slot:
-        return {
-            'in_class': True,
-            'classroom_id': slot.classroom_id,
-            'period': current_period.dict() if current_period else None,
-            'weekday': weekday.value,
-        }
+    # 3. Agrupar por classroom_id
+    grouped: dict[int, list] = {cid: [] for cid in classroom_ids}
+    for slot in slots:
+        grouped[slot.classroom_id].append(
+            SlotPublic.model_validate(slot).model_dump()
+        )
 
-    return {'in_class': False}
-'''
+    return grouped
+
+
+# --------------------------------------------------------------------------- #
+# GET /schedules/teachers — Lista reduzida de professores (sem dados sensíveis)#
+# --------------------------------------------------------------------------- #
+
+
+@router.get(
+    '/teachers',
+    response_model=TeacherSummaryList,
+    dependencies=[
+        Depends(
+            AnyPermissionChecker({
+                SystemPermissions.SCHEDULES_VIEW_ALL,
+                SystemPermissions.SCHEDULES_VIEW_OWN,
+                SystemPermissions.SCHEDULES_VIEW_CHILD,
+            })
+        )
+    ],
+)
+async def list_schedule_teachers(
+    session: Session,
+    current_user: CurrentUser,
+) -> TeacherSummaryList:
+    """
+    Retorna perfis mínimos de professores (id, nome, classroom_id) para
+    exibição nos cabeçalhos da grade de horários. Sem dados sensíveis.
+
+    Regras de visibilidade por papel:
+      - SCHEDULES_VIEW_ALL (coordenador/admin) → todos os professores ativos
+      - SCHEDULES_VIEW_OWN (professor)         → apenas o próprio perfil
+      - SCHEDULES_VIEW_CHILD (responsável)     → apenas professores que
+          ministram aula em turmas onde o responsável tem filho matriculado
+    """
+    if require_permission(current_user, SystemPermissions.SCHEDULES_VIEW_ALL):
+        # Todos os professores ativos
+        rows = await session.scalars(
+            select(User)
+            .where(User.role == UserRole.TEACHER, User.is_active.is_(True))
+            .order_by(User.first_name, User.last_name)
+        )
+        teachers = list(rows.all())
+
+    elif require_permission(
+        current_user, SystemPermissions.SCHEDULES_VIEW_OWN
+    ):
+        # Professor vê apenas a si mesmo
+        teachers = [current_user]
+
+    else:
+        # Responsável: professores das turmas dos filhos
+        # 1. Descobrir classroom_ids acessíveis
+        cid_rows = await session.scalars(
+            select(User.classroom_id)
+            .join(
+                guardian_student,
+                (guardian_student.c.student_id == User.id)
+                & (guardian_student.c.guardian_id == current_user.id),
+            )
+            .where(User.classroom_id.is_not(None))
+            .distinct()
+        )
+        classroom_ids = [cid for cid in cid_rows.all() if cid is not None]
+
+        if not classroom_ids:
+            return TeacherSummaryList(teachers=[])
+
+        # 2. Professores referenciados por slots dessas turmas
+        teacher_id_rows = await session.scalars(
+            select(ScheduleSlot.teacher_id)
+            .where(
+                ScheduleSlot.classroom_id.in_(classroom_ids),
+                ScheduleSlot.teacher_id.is_not(None),
+            )
+            .distinct()
+        )
+        teacher_ids = [tid for tid in teacher_id_rows.all() if tid is not None]
+
+        if not teacher_ids:
+            return TeacherSummaryList(teachers=[])
+
+        rows = await session.scalars(
+            select(User)
+            .where(User.id.in_(teacher_ids), User.is_active.is_(True))
+            .order_by(User.first_name, User.last_name)
+        )
+        teachers = list(rows.all())
+
+    return TeacherSummaryList(
+        teachers=[TeacherSummary.model_validate(t) for t in teachers]
+    )

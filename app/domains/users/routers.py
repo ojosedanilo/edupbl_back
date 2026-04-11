@@ -679,7 +679,14 @@ async def upload_my_avatar(
     Aceita JPEG, PNG ou WebP com até 2 MB. A imagem é redimensionada
     para 256×256 px e salva como WebP em data/avatars/{user_id}.webp,
     substituindo qualquer versão anterior.
+
+    Alunos não podem alterar a própria foto de perfil.
     """
+    if current_user.role == UserRole.STUDENT:
+        raise HTTPException(
+            status_code=HTTPStatus.FORBIDDEN,
+            detail='Alunos não podem alterar a foto de perfil.',
+        )
     return await _process_avatar_upload(current_user, file, session)
 
 
@@ -699,7 +706,14 @@ async def delete_my_avatar(
     Apaga o arquivo do disco e limpa o campo avatar_url no banco,
     definindo-o como string vazia (não nulo) para indicar ausência de avatar
     sem perder a rastreabilidade.
+
+    Alunos não podem remover a própria foto de perfil.
     """
+    if current_user.role == UserRole.STUDENT:
+        raise HTTPException(
+            status_code=HTTPStatus.FORBIDDEN,
+            detail='Alunos não podem alterar a foto de perfil.',
+        )
     _delete_avatar_file(current_user.id)
     current_user.avatar_url = ''
     await session.commit()

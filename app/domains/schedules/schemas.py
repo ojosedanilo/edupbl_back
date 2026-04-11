@@ -100,3 +100,46 @@ class OverridePublic(BaseModel):
 
 class OverrideList(BaseModel):
     overrides: list[OverridePublic]
+
+
+# ── Schemas de professores (visão reduzida, sem dados sensíveis) ─────────── #
+
+
+class TeacherSummary(BaseModel):
+    """Perfil mínimo de professor para exibição na grade de horários."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    first_name: str
+    last_name: str
+    classroom_id: int | None = None
+
+
+class TeacherSummaryList(BaseModel):
+    teachers: list[TeacherSummary]
+
+
+# ── Schemas de bulk ──────────────────────────────────────────────────────── #
+
+
+class BulkClassroomsResponse(BaseModel):
+    """Slots agrupados por classroom_id. Apenas turmas com acesso autorizado."""
+
+    slots_by_classroom: dict[int, list[SlotPublic]]
+
+
+class BulkTeachersResponse(BaseModel):
+    """Slots agrupados por teacher_id."""
+
+    slots_by_teacher: dict[int, list[SlotPublic]]
+
+
+class BulkOverridesResponse(BaseModel):
+    """
+    Overrides relevantes para o conjunto de turmas/professores pedido.
+    Inclui todos os overrides affects_all=True e os que tenham ao menos
+    uma das classroom_ids ou teacher_ids solicitados.
+    """
+
+    overrides: list[OverridePublic]
