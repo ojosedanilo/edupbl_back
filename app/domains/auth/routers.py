@@ -26,8 +26,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.settings import settings
 from app.domains.auth.schemas import Token
 from app.domains.users.models import User
-from app.domains.users.schemas import UserPublic, UserWithPermissions
+from app.domains.users.schemas import (
+    UserPublic,
+    UserWithPermissions,
+)
 from app.shared.db.database import get_session
+from app.shared.password_validator import validate_password
 from app.shared.rbac.dependencies import role_required
 from app.shared.rbac.helpers import get_user_permissions
 from app.shared.rbac.roles import UserRole
@@ -35,6 +39,7 @@ from app.shared.security import (
     create_access_token,
     create_refresh_token,
     get_current_user,
+    get_password_hash,
     verify_password,
 )
 
@@ -81,6 +86,48 @@ def _build_token_response(user: User, response: Response) -> dict:
         'token_type': 'bearer',
         'must_change_password': user.must_change_password,
     }
+
+
+# --------------------------------------------------------------------------- #
+# POST /auth/change-password — Trocar senha                                  #
+# --------------------------------------------------------------------------- #
+
+
+@router.post('/change-password')
+async def change_password(
+    old_password: str,
+    new_password: str,
+    db: Session,
+    current_user: CurrentUser,
+):
+    # Verificar senha antiga
+    if not verify_password(old_password, current_user.password):
+        raise HTTPException(401, 'Senha atual incorreta')
+
+    # Validar nova senha
+    password_result = validate_password(
+        new_password,
+        first_name=current_user.first_name,
+        last_name=current_user.last_name,
+        current_password_hash=current_user.password,
+    )
+
+    if not password_result.valid:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                'valid': False,
+                'errors': [e.value for e in password_result.erros],
+                'suggestions': [s.value for s in password_result.suggestions],
+            },
+        )
+
+    # Atualizar senha
+    current_user.password = get_password_hash(new_password)
+    current_user.must_change_password = False
+    await db.commit()
+
+    return {'message': 'Senha alterada com sucesso'}
 
 
 # --------------------------------------------------------------------------- #

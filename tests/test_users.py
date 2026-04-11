@@ -59,7 +59,7 @@ def test_create_user_success(client, admin):
         json={
             'username': 'novousuario',
             'email': 'novo@example.com',
-            'password': 'senhasegura',
+            'password': 'NovoStr0ng@Pass#2024!',
             'first_name': 'Novo',
             'last_name': 'Usuário',
             'role': UserRole.TEACHER.value,
@@ -98,7 +98,7 @@ def test_create_user_duplicate_username(client, admin, user):
         json={
             'username': user.username,
             'email': 'outro@example.com',
-            'password': 'secret123',
+            'password': 'ConflStr0ng@Pass#2024!',
             'first_name': 'Outro',
             'last_name': 'Usuário',
         },
@@ -115,7 +115,7 @@ def test_create_user_duplicate_email(client, admin, user):
         json={
             'username': 'outrouser',
             'email': user.email,
-            'password': 'secret123',
+            'password': 'ConflStr0ng@Pass#2024!',
             'first_name': 'Outro',
             'last_name': 'Usuário',
         },
@@ -133,7 +133,7 @@ async def test_create_user_username_conflict_async(client, session, admin):
         json={
             'username': existing.username,
             'email': 'outro@test.com',
-            'password': 'secret123',
+            'password': 'ConflStr0ng@Pass#2024!',
             'first_name': 'X',
             'last_name': 'Y',
         },
@@ -151,7 +151,7 @@ async def test_create_user_email_conflict_async(client, session, admin):
         json={
             'username': 'outro_user',
             'email': existing.email,
-            'password': 'secret123',
+            'password': 'ConflStr0ng@Pass#2024!',
             'first_name': 'X',
             'last_name': 'Y',
         },
@@ -234,7 +234,7 @@ async def test_create_and_read_user(client, admin, coordinator):
         json={
             'username': 'novo_user',
             'email': 'novo@test.com',
-            'password': 'senhasegura',
+            'password': 'NovoStr0ng@Pass#2024!',
             'first_name': 'Novo',
             'last_name': 'User',
         },
@@ -729,12 +729,12 @@ def test_update_user_password_rehashes(client, user, token):
     resp = client.put(
         f'/users/{user.id}',
         headers={'Authorization': f'Bearer {token}'},
-        json={'password': 'novasenha123'},
+        json={'password': 'NovaStr0ng@Pass#2024!'},
     )
     assert resp.status_code == HTTPStatus.OK
     login = client.post(
         '/auth/token',
-        data={'username': user.email, 'password': 'novasenha123'},
+        data={'username': user.email, 'password': 'NovaStr0ng@Pass#2024!'},
     )
     assert login.status_code == HTTPStatus.OK
 
@@ -903,7 +903,7 @@ def test_change_password_wrong_current(client, user, token):
         headers={'Authorization': f'Bearer {token}'},
         json={
             'current_password': 'senha_errada',
-            'new_password': 'novasenha123',
+            'new_password': 'NovaStr0ng@Pass#2024!',
         },
     )
     assert resp.status_code == HTTPStatus.UNAUTHORIZED
@@ -917,7 +917,7 @@ def test_change_password_success(client, user, token):
         headers={'Authorization': f'Bearer {token}'},
         json={
             'current_password': user.clean_password,
-            'new_password': 'novaSenhaForte!',
+            'new_password': 'NovaStr0ng@Pass#2024!',
         },
     )
     assert resp.status_code == HTTPStatus.OK
@@ -925,7 +925,7 @@ def test_change_password_success(client, user, token):
 
     login = client.post(
         '/auth/token',
-        data={'username': user.email, 'password': 'novaSenhaForte!'},
+        data={'username': user.email, 'password': 'NovaStr0ng@Pass#2024!'},
     )
     assert login.status_code == HTTPStatus.OK
 
@@ -937,7 +937,7 @@ async def test_change_password_success_async(client, session):
         '/users/me/password',
         json={
             'current_password': u.clean_password,
-            'new_password': 'novaSenha!',
+            'new_password': 'NovaStr0ng@Pass#Async!',
         },
         headers=_auth(u),
     )
@@ -1590,3 +1590,176 @@ def test_list_classrooms_unauthenticated(client):
     """Requisição sem token deve ser recusada com 401."""
     resp = client.get('/users/classrooms')
     assert resp.status_code == HTTPStatus.UNAUTHORIZED
+
+
+# ===========================================================================
+# PATCH /users/{id}/admin-update — Atualização admin privilegiada
+# ===========================================================================
+
+
+async def test_admin_update_user_success(client, session, admin):
+    """Admin pode editar qualquer campo de qualquer usuário."""
+    target = await _make_user(session, role=UserRole.STUDENT)
+    resp = client.patch(
+        f'/users/{target.id}/admin-update',
+        headers=_auth(admin),
+        json={'first_name': 'Editado'},
+    )
+    assert resp.status_code == HTTPStatus.OK
+    assert resp.json()['first_name'] == 'Editado'
+
+
+async def test_admin_update_user_not_found(client, session, admin):
+    """Admin tenta editar usuário inexistente → 404."""
+    resp = client.patch(
+        '/users/99999/admin-update',
+        headers=_auth(admin),
+        json={'first_name': 'X'},
+    )
+    assert resp.status_code == HTTPStatus.NOT_FOUND
+
+
+async def test_admin_update_coordinator_cannot_change_role(
+    client, session, coordinator
+):
+    """Coordinator não pode alterar role (falta USER_CHANGE_ROLE) → 403."""
+    target = await _make_user(session, role=UserRole.STUDENT)
+    resp = client.patch(
+        f'/users/{target.id}/admin-update',
+        headers=_auth(coordinator),
+        json={'role': UserRole.ADMIN.value},
+    )
+    assert resp.status_code == HTTPStatus.FORBIDDEN
+
+
+async def test_admin_update_conflict_username(client, session, admin):
+    """Admin tenta usar username já ocupado por outro usuário → 409."""
+    u1 = await _make_user(session)
+    u2 = await _make_user(session)
+    resp = client.patch(
+        f'/users/{u2.id}/admin-update',
+        headers=_auth(admin),
+        json={'username': u1.username},
+    )
+    assert resp.status_code == HTTPStatus.CONFLICT
+
+
+# ===========================================================================
+# PATCH /users/{id}/admin-avatar — Admin faz upload de avatar de qualquer user
+# ===========================================================================
+
+
+async def test_admin_avatar_upload_not_found(client, session, admin):
+    """Admin tenta fazer upload para usuário inexistente → 404."""
+    import io
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new('RGB', (100, 100), color=(255, 0, 0)).save(buf, format='JPEG')
+    buf.seek(0)
+
+    resp = client.patch(
+        '/users/99999/admin-avatar',
+        headers=_auth(admin),
+        files={'file': ('avatar.jpg', buf, 'image/jpeg')},
+    )
+    assert resp.status_code == HTTPStatus.NOT_FOUND
+
+
+async def test_admin_avatar_upload_success(client, session, admin):
+    """Admin faz upload de avatar de qualquer usuário → 200."""
+    import io
+    from PIL import Image
+
+    target = await _make_user(session, role=UserRole.STUDENT)
+
+    buf = io.BytesIO()
+    Image.new('RGB', (100, 100), color=(0, 255, 0)).save(buf, format='JPEG')
+    buf.seek(0)
+
+    resp = client.patch(
+        f'/users/{target.id}/admin-avatar',
+        headers=_auth(admin),
+        files={'file': ('avatar.jpg', buf, 'image/jpeg')},
+    )
+    assert resp.status_code == HTTPStatus.OK
+
+
+# ===========================================================================
+# PATCH /users/{id}/reactivate — Reativar usuário desativado
+# ===========================================================================
+
+
+async def test_reactivate_user_success(client, session, admin):
+    """Admin reativa usuário desativado → 200."""
+    target = await _make_user(session)
+    target.is_active = False
+    await session.commit()
+
+    resp = client.patch(
+        f'/users/{target.id}/reactivate',
+        headers=_auth(admin),
+    )
+    assert resp.status_code == HTTPStatus.OK
+    assert resp.json()['message'] == 'User reactivated successfully'
+
+
+async def test_reactivate_self_not_allowed(client, session, admin):
+    """Admin não pode reativar a si mesmo → 422."""
+    # Cria segundo admin para fazer a chamada
+    admin2 = await _make_user(session, role=UserRole.ADMIN)
+
+    resp = client.patch(
+        f'/users/{admin2.id}/reactivate',
+        headers=_auth(admin2),
+    )
+    # Admin2 está ativo — reativar a si mesmo deve ser proibido
+    assert resp.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+
+
+async def test_reactivate_user_not_found(client, session, admin):
+    """Reativar usuário inexistente → 404."""
+    resp = client.patch(
+        '/users/99999/reactivate',
+        headers=_auth(admin),
+    )
+    assert resp.status_code == HTTPStatus.NOT_FOUND
+
+
+async def test_reactivate_already_active_user(client, session, admin):
+    """Reativar usuário já ativo → 409."""
+    target = await _make_user(session)
+    # target.is_active já é True por padrão
+
+    resp = client.patch(
+        f'/users/{target.id}/reactivate',
+        headers=_auth(admin),
+    )
+    assert resp.status_code == HTTPStatus.CONFLICT
+
+
+async def test_admin_update_user_success_with_name_change(
+    client, session, admin
+):
+    """Admin atualiza username E email de outro usuário — cobre ambos os branches de conflito."""
+    target = await _make_user(session, role=UserRole.STUDENT)
+    resp = client.patch(
+        f'/users/{target.id}/admin-update',
+        headers=_auth(admin),
+        json={'username': 'newuniqueuser99', 'email': 'newemail99@test.com'},
+    )
+    assert resp.status_code == HTTPStatus.OK
+    assert resp.json()['username'] == 'newuniqueuser99'
+
+
+async def test_admin_update_own_username_no_conflict(client, session, admin):
+    """Admin atualiza username do próprio usuário para o mesmo valor — sem conflito."""
+    target = await _make_user(session, role=UserRole.STUDENT)
+    resp = client.patch(
+        f'/users/{target.id}/admin-update',
+        headers=_auth(admin),
+        json={
+            'username': target.username
+        },  # mesmo username → conflict.id == user_id
+    )
+    assert resp.status_code == HTTPStatus.OK

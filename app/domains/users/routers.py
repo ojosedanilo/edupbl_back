@@ -58,6 +58,7 @@ from app.domains.users.schemas import (
     UserUpdate,
 )
 from app.shared.db.database import get_session
+from app.shared.password_validator import validate_password
 from app.shared.rbac.dependencies import (
     AnyPermissionChecker,
     PermissionChecker,
@@ -189,6 +190,7 @@ async def create_user(user: UserSchema, session: Session):
     Verifica conflito de username e e-mail antes de inserir.
     Retorna mensagens de erro distintas para cada campo em conflito.
     """
+    # Verificar se o usuário já existe
     existing = await session.scalar(
         select(User).where(
             (User.username == user.username) | (User.email == user.email)
@@ -204,6 +206,24 @@ async def create_user(user: UserSchema, session: Session):
         raise HTTPException(
             status_code=HTTPStatus.CONFLICT,
             detail='Email already exists',
+        )
+
+    # Validar senha
+    password_result = validate_password(
+        user.password,
+        first_name=user.first_name,
+        last_name=user.last_name,
+    )
+
+    if not password_result.valid:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                'valid': False,
+                'errors': [e.value for e in password_result.erros],
+                'strength': password_result.strength_avaliation.value,
+                'suggestions': [s.value for s in password_result.suggestions],
+            },
         )
 
     db_user = User(

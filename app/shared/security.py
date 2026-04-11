@@ -32,9 +32,7 @@ oauth2_scheme = OAuth2PasswordBearer(
 )
 
 
-# --------------------------------------------------------------------------- #
-# Criação de tokens JWT                                                        #
-# --------------------------------------------------------------------------- #
+# ── Criação de tokens JWT ────────────────────────────────────────────────── #
 
 
 def create_access_token(data: dict) -> str:
@@ -67,9 +65,7 @@ def create_refresh_token(data: dict) -> str:
     return encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
-# --------------------------------------------------------------------------- #
-# Hash de senhas                                                               #
-# --------------------------------------------------------------------------- #
+# ── Hash de senhas ───────────────────────────────────────────────────────── #
 
 
 def get_password_hash(password: str) -> str:
@@ -82,9 +78,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
-# --------------------------------------------------------------------------- #
-# FastAPI Dependency: usuário autenticado                                      #
-# --------------------------------------------------------------------------- #
+# ── FastAPI Dependency: usuário autenticado ──────────────────────────────── #
 
 
 async def get_current_user(

@@ -565,7 +565,7 @@ async def test_seed_real_users_avatar_not_found(session, tmp_path):
 
 
 async def test_seed_real_users_invalid_row_logged(session, tmp_path, capsys):
-    """Linha malformada no CSV → erro capturado, outros usuários criados."""
+    """CSV com linha inválida → seed aborta o arquivo e imprime aviso."""
     usuarios_dir = tmp_path / 'usuarios'
     usuarios_dir.mkdir()
     _write_csv(
@@ -581,11 +581,16 @@ async def test_seed_real_users_invalid_row_logged(session, tmp_path, capsys):
     with patch('app.shared.db.seed.USUARIOS_DIR', usuarios_dir):
         await seed_real_users(session)
 
-    # O usuário válido deve ter sido criado mesmo com linha inválida
+    captured = capsys.readouterr()
+    # Deve registrar o aviso de erro de validação
+    assert 'erro(s) de validação' in captured.out
+    assert 'Corrija o CSV' in captured.out
+
+    # Com linha inválida o CSV é abortado — nenhum usuário é criado
     result = await session.scalars(
         select(User).where(User.email == 'valido@test.com')
     )
-    assert result.first() is not None
+    assert result.first() is None
 
 
 async def test_seed_real_users_default_role_used(session, tmp_path):

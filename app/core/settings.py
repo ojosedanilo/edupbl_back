@@ -43,17 +43,17 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = 'http://localhost:5173'
 
     # ── E-mail ────────────────────────────────────────────────────── #
-    SMTP_HOST: str
+    SMTP_HOST: str = 'smtp.gmail.com'
     SMTP_PORT: int = 587
-    SMTP_USER: str
-    SMTP_PASSWORD: str
-    SMTP_FROM: str
+    SMTP_USER: str = 'your_app_gmail@gmail.com'
+    SMTP_PASSWORD: str = 'your_google_app_passoword'
+    SMTP_FROM: str = 'your_app_gmail@gmail.com'
     SMTP_ENABLED: bool = False
 
     # ── WhatsApp ──────────────────────────────────────────────────── #
     WHATSAPP_ENABLED: bool = False
-    WHATSAPP_DB_PATH: str
-    WHATSAPP_DEVICE_NAME: str
+    WHATSAPP_DB_PATH: str = './data/whatsapp_session.db'
+    WHATSAPP_DEVICE_NAME: str = 'edupbl_bot'
 
     # ── Cookies ────────────────────────────────────────────────────── #
     # Computed fields derivados de ENVIRONMENT.
@@ -64,16 +64,15 @@ class Settings(BaseSettings):
     @property
     def COOKIE_SAME_SITE(self) -> str:
         # Produção exige 'none' para cookies cross-origin (frontend ≠ backend).
-        # Desenvolvimento usaria 'lax', mas está fixo em 'none' por ora.
-        return 'none'
-        # return 'none' if self.ENVIRONMENT == 'production' else 'lax'
+        # Desenvolvimento usa 'lax' para funcionar em HTTP sem HTTPS.
+        return 'none' if self.ENVIRONMENT == 'production' else 'lax'
 
     @computed_field
     @property
     def COOKIE_SECURE(self) -> bool:
-        # 'none' para SameSite exige Secure=True — mesmo em dev.
-        return True
-        # return self.ENVIRONMENT == 'production'
+        # SameSite='none' exige Secure=True (apenas em produção com HTTPS).
+        # Em desenvolvimento com HTTP, Secure=False para o browser aceitar o cookie.
+        return self.ENVIRONMENT == 'production'
 
     # ── Autenticação JWT ───────────────────────────────────────────── #
     SECRET_KEY: str = 'test-secret-key-not-for-production'
