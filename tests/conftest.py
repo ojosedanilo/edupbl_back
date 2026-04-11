@@ -146,7 +146,7 @@ def mock_db_time():
 
 
 # --------------------------------------------------------------------------- #
-# Factory de usuario                                                          #
+# Factory de usuário                                                          #
 # --------------------------------------------------------------------------- #
 
 
@@ -166,12 +166,12 @@ class UserFactory(factory.Factory):
 
 
 # --------------------------------------------------------------------------- #
-# Helper interno de criacao de usuario                                        #
+# Helper interno de criacao de usuário                                        #
 # --------------------------------------------------------------------------- #
 
 
 async def _make_user(session, **kwargs):
-    """Cria e persiste um usuario, expondo clean_password."""
+    """Cria e persiste um usuário, expondo clean_password."""
     password = kwargs.pop('clean_password', 'testtest')
 
     # Campos declarados no UserFactory — passados normalmente para o factory.
@@ -273,5 +273,5 @@ async def refresh_token(user):
 
 
 def make_token(u):
-    """Gera access token para qualquer usuario - helper nos testes."""
+    """Gera access token para qualquer usuário - helper nos testes."""
     return create_access_token(data={'sub': u.email})

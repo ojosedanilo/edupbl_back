@@ -74,6 +74,20 @@ class Settings(BaseSettings):
         # Em desenvolvimento com HTTP, Secure=False para o browser aceitar o cookie.
         return self.ENVIRONMENT == 'production'
 
+    @computed_field
+    @property
+    def REFRESH_COOKIE_PATH(self) -> str:
+        # Em produção, frontend e backend têm origens distintas — o cookie é
+        # enviado diretamente ao backend em /auth/refresh_token.
+        # Em desenvolvimento, o proxy do Vite reescreve /api/auth/* → /auth/*,
+        # então o browser vê o path como /api/auth/refresh_token. Se o cookie
+        # for gravado com path=/auth/refresh_token, o browser não o envia
+        # (o path não bate). Usar path=/ resolve isso sem comprometer a segurança,
+        # pois o cookie já é HttpOnly e o ambiente de dev não é exposto.
+        return (
+            '/auth/refresh_token' if self.ENVIRONMENT == 'production' else '/'
+        )
+
     # ── Autenticação JWT ───────────────────────────────────────────── #
     SECRET_KEY: str = 'test-secret-key-not-for-production'
     ALGORITHM: str = 'HS256'

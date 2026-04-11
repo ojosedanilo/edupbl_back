@@ -43,8 +43,10 @@ from app.shared.security import (
     verify_password,
 )
 
-# Path do cookie de refresh — deve bater exatamente em set/delete
-REFRESH_COOKIE_PATH = '/auth/refresh_token'
+# Path do cookie de refresh — deve bater exatamente em set/delete.
+# Lido das settings para variar entre dev (proxy Vite reescreve o path)
+# e produção (backend servido diretamente em /auth/refresh_token).
+REFRESH_COOKIE_PATH = settings.REFRESH_COOKIE_PATH
 
 router = APIRouter(prefix='/auth', tags=['auth'])
 

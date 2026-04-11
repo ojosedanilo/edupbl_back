@@ -26,7 +26,7 @@ uv run python scripts/seed_db.py --tests-users
 
 Dados reais
 -----------
-Usuários lidos de data/usuarios/:
+Usuários lidos de data/usuários/:
   admins.csv, coordenadores.csv, professores.csv, professores_dt.csv,
   alunos.csv, porteiros.csv, responsaveis.csv
 

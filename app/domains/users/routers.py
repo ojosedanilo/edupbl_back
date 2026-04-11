@@ -684,6 +684,30 @@ async def upload_my_avatar(
 
 
 # --------------------------------------------------------------------------- #
+# DELETE /users/me/avatar — Remover avatar (próprio usuário)                 #
+# --------------------------------------------------------------------------- #
+
+
+@router.delete('/me/avatar', response_model=UserPublic)
+async def delete_my_avatar(
+    session: Session,
+    current_user: CurrentUser,
+):
+    """
+    Remove o avatar do usuário logado.
+
+    Apaga o arquivo do disco e limpa o campo avatar_url no banco,
+    definindo-o como string vazia (não nulo) para indicar ausência de avatar
+    sem perder a rastreabilidade.
+    """
+    _delete_avatar_file(current_user.id)
+    current_user.avatar_url = ''
+    await session.commit()
+    await session.refresh(current_user)
+    return current_user
+
+
+# --------------------------------------------------------------------------- #
 # PATCH /users/me/password — Trocar senha                                    #
 # --------------------------------------------------------------------------- #
 

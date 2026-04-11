@@ -388,9 +388,9 @@ async def seed_test_users(session: AsyncSession):
 
     if criados:
         await session.commit()
-        print(f'OK {criados} usuarios criados com sucesso!')
+        print(f'OK {criados} usuários criados com sucesso!')
     else:
-        print('INFO Todos os usuarios de teste ja existem. Nenhum criado.')
+        print('INFO Todos os usuários de teste já existem. Nenhum criado.')
 
 
 # ---------------------------------------------------------------------------
