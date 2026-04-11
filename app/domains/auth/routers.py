@@ -159,6 +159,12 @@ async def login_for_access_token(
             detail='Incorrect email or password',
         )
 
+    if not user.is_active:
+        raise HTTPException(
+            status_code=HTTPStatus.FORBIDDEN,
+            detail='Inactive user',
+        )
+
     return _build_token_response(user, response)
 
 
@@ -226,6 +232,12 @@ async def refresh_access_token(
     )
     if not user:
         raise credentials_exception
+
+    if not user.is_active:
+        raise HTTPException(
+            status_code=HTTPStatus.FORBIDDEN,
+            detail='Inactive user',
+        )
 
     return _build_token_response(user, response)
 
