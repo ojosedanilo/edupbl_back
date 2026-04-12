@@ -64,7 +64,6 @@ import csv
 from pathlib import Path
 
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domains.schedules.enums import PeriodTypeEnum, WeekdayEnum
@@ -112,9 +111,11 @@ async def _import_free_slots(session: AsyncSession) -> None:
     """Lê o CSV e cria slots FREE para cada professor."""
     # Cache de professores (email → id)
     rows = await session.execute(
-        select(User.email, User.id).where(User.role.in_([
-            UserRole.TEACHER,
-        ]))
+        select(User.email, User.id).where(
+            User.role.in_([
+                UserRole.TEACHER,
+            ])
+        )
     )
     teacher_map: dict[str, int] = {
         email.lower(): uid for email, uid in rows.all()
@@ -125,8 +126,10 @@ async def _import_free_slots(session: AsyncSession) -> None:
         linhas = list(reader)
 
     # Verifica cabeçalho mínimo
-    fieldnames = {(reader.fieldnames or [])[i].strip().lower()
-                  for i in range(len(reader.fieldnames or []))}
+    fieldnames = {
+        (reader.fieldnames or [])[i].strip().lower()
+        for i in range(len(reader.fieldnames or []))
+    }
     required = {'email', 'dia_semana', 'numero_slot'}
     missing = required - fieldnames
     if missing:
@@ -145,7 +148,9 @@ async def _import_free_slots(session: AsyncSession) -> None:
             slot_raw = row.get('numero_slot', '').strip()
 
             if not email or not dia_raw or not slot_raw:
-                print(f'  ⚠️  Linha {linha_num}: campos obrigatórios vazios — ignorada.')
+                print(
+                    f'  ⚠️  Linha {linha_num}: campos obrigatórios vazios — ignorada.'
+                )
                 erros += 1
                 continue
 
@@ -161,7 +166,9 @@ async def _import_free_slots(session: AsyncSession) -> None:
             try:
                 weekday = WeekdayEnum(int(dia_raw))
             except (ValueError, KeyError):
-                print(f'  ⚠️  Linha {linha_num}: dia_semana inválido "{dia_raw}"')
+                print(
+                    f'  ⚠️  Linha {linha_num}: dia_semana inválido "{dia_raw}"'
+                )
                 erros += 1
                 continue
 
@@ -199,13 +206,7 @@ async def _import_free_slots(session: AsyncSession) -> None:
                 period_number=period_number,
             )
             session.add(slot)
-
-            try:
-                await session.flush()
-                criados += 1
-            except IntegrityError:
-                await session.rollback()
-                pulados += 1
+            criados += 1
 
         except Exception as exc:
             print(f'  ⚠️  Linha {linha_num}: erro inesperado — {exc}')
@@ -260,9 +261,7 @@ async def seed_planning_slots(session: AsyncSession) -> None:
             )
         )
         # Conjunto de (weekday, period_number) já ocupados
-        occupied: set[tuple] = {
-            (w, p) for w, p, _ in existing_rows.all()
-        }
+        occupied: set[tuple] = {(w, p) for w, p, _ in existing_rows.all()}
 
         for weekday in WEEKDAYS:
             for period_number in PERIOD_NUMBERS:
@@ -293,14 +292,8 @@ async def seed_planning_slots(session: AsyncSession) -> None:
                     period_number=period_number,
                 )
                 session.add(slot)
-
-                try:
-                    await session.flush()
-                    criados += 1
-                    occupied.add(key)
-                except IntegrityError:
-                    await session.rollback()
-                    pulados += 1
+                criados += 1
+                occupied.add(key)
 
     await session.commit()
 

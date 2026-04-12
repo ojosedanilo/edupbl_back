@@ -47,7 +47,7 @@ class PeriodsList(BaseModel):
 class SlotCreate(BaseModel):
     type: str
     title: str
-    classroom_id: int
+    classroom_id: int | None  # None para slots PLANNING e FREE
     teacher_id: int | None
     weekday: WeekdayEnum
     period_number: int | None
@@ -59,7 +59,7 @@ class SlotPublic(BaseModel):
     id: int
     type: str
     title: str
-    classroom_id: int
+    classroom_id: int | None  # None para slots PLANNING e FREE
     teacher_id: int | None
     weekday: WeekdayEnum
     period_number: int | None

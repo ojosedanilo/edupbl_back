@@ -1,8 +1,8 @@
 """initial
 
-Revision ID: 62673cf35b89
+Revision ID: c04a5d810491
 Revises: 
-Create Date: 2026-04-11 16:44:55.873785
+Create Date: 2026-04-11 21:02:08.808267
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '62673cf35b89'
+revision: str = 'c04a5d810491'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -106,14 +106,15 @@ def upgrade() -> None:
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('type', sa.Enum('class_period', 'planning', 'free', 'snack_break', 'lunch_break', name='period_type'), nullable=False),
     sa.Column('title', sa.String(length=200), nullable=False),
-    sa.Column('classroom_id', sa.Integer(), nullable=False),
+    sa.Column('classroom_id', sa.Integer(), nullable=True),
     sa.Column('teacher_id', sa.Integer(), nullable=True),
     sa.Column('weekday', sa.Enum('SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', name='weekday'), nullable=False),
     sa.Column('period_number', sa.Integer(), nullable=True),
     sa.ForeignKeyConstraint(['classroom_id'], ['classrooms.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['teacher_id'], ['users.id'], ondelete='SET NULL'),
     sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('classroom_id', 'weekday', 'period_number', 'type', name='uq_classroom_weekday_period')
+    sa.UniqueConstraint('classroom_id', 'weekday', 'period_number', 'type', name='uq_classroom_weekday_period'),
+    sa.UniqueConstraint('teacher_id', 'weekday', 'period_number', 'type', name='uq_teacher_weekday_period')
     )
     op.create_table('override_classrooms',
     sa.Column('classroom_id', sa.Integer(), nullable=False),
