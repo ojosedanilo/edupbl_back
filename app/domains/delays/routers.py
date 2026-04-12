@@ -12,7 +12,7 @@ Regras de autorização por endpoint:
   PATCH  /delays/{id}/undo    → requer DELAYS_REVIEW — desfaz dentro da janela
 """
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from http import HTTPStatus
 from typing import Annotated, Optional
 
@@ -30,6 +30,10 @@ from app.domains.delays.schemas import (
     DelayReject,
 )
 from app.domains.users.models import User, active_users, guardian_student
+from app.shared.date_validator import (
+    validate_date_within_limit,
+    validate_time_is_interval,
+)
 from app.shared.db.database import get_session
 from app.shared.notifications.dispatcher import (
     notify_delay_approved,
@@ -146,16 +150,31 @@ async def create_delay(
             detail='User is not a student',
         )
 
-    # Data do atraso: usa a fornecida ou hoje como padrão; limita a 3 dias no passado
+    # Data do atraso: usa a fornecida ou hoje como padrão
     target_date = (
         data.delay_date if data.delay_date is not None else date.today()
     )
-    min_date = date.today() - timedelta(days=3)
-    if target_date < min_date or target_date > date.today():
+
+    # Todos os roles que criam atrasos (porteiro, coordenador, admin)
+    # só podem registrar no mesmo dia — max_days_ago=0.
+    date_valid, date_error = validate_date_within_limit(target_date, max_days_ago=0)
+    if not date_valid:
         raise HTTPException(
-            status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
-            detail='delay_date must be between 3 days ago and today',
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail=date_error,
         )
+
+    # Porteiros só podem registrar durante os intervalos escolares
+    if current_user.role == UserRole.PORTER:
+        now_time = datetime.now(tz=timezone.utc).astimezone().time().replace(
+            tzinfo=None
+        )
+        time_valid, time_error = validate_time_is_interval(now_time)
+        if not time_valid:
+            raise HTTPException(
+                status_code=HTTPStatus.FORBIDDEN,
+                detail=time_error,
+            )
 
     # Impede atraso duplicado no mesmo dia para o mesmo aluno
     existing = await session.scalar(

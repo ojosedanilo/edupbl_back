@@ -10,6 +10,7 @@ Regras de autorização por endpoint:
   DELETE /occurrences/{id}     → requer OCCURRENCES_DELETE (professor só deleta as próprias)
 """
 
+from datetime import datetime, timezone
 from http import HTTPStatus
 from typing import Annotated
 
@@ -25,6 +26,7 @@ from app.domains.occurrences.schemas import (
     OccurrenceUpdate,
 )
 from app.domains.users.models import User, active_users
+from app.shared.date_validator import validate_date_within_limit
 from app.shared.db.database import get_session
 from app.shared.notifications.dispatcher import notify_occurrence_created
 from app.shared.rbac.dependencies import PermissionChecker
@@ -98,6 +100,21 @@ async def create_occurrence(
     if not student:
         raise HTTPException(
             status_code=HTTPStatus.NOT_FOUND, detail='Student not found'
+        )
+
+    # Valida a data da ocorrência: máx 3 dias no passado, sem datas futuras
+    occurrence_date = (
+        data.occurred_at.date()
+        if data.occurred_at is not None
+        else datetime.now(tz=timezone.utc).date()
+    )
+    date_valid, date_error = validate_date_within_limit(
+        occurrence_date, max_days_ago=3
+    )
+    if not date_valid:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail=date_error,
         )
 
     occurrence = Occurrence(
