@@ -24,6 +24,7 @@ from sqlalchemy import text
 from app.core.settings import settings
 from app.domains.auth import routers as auth_routers
 from app.domains.delays import routers as delays_routers
+from app.domains.guardians import routers as guardians_routers
 from app.domains.occurrences import routers as occurrences_routers
 from app.domains.schedules import routers as schedules_routers
 from app.domains.users import routers as users_routers
@@ -77,6 +78,7 @@ app.include_router(users_routers.router)
 app.include_router(occurrences_routers.router)
 app.include_router(schedules_routers.router)
 app.include_router(delays_routers.router)
+app.include_router(guardians_routers.router)
 
 
 @app.get('/', status_code=HTTPStatus.OK, response_model=HealthResponse)
